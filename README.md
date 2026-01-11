@@ -1,19 +1,58 @@
-This Repo is a small collection of scripts to play emulated games with an indoor trainer and a Zwift Play Controller.
+This repo is a small collection of scripts for playing emulated games with an indoor trainer and a Zwift Play Controller, in particular Mario Kart Wii.
+	•	It is set up for a Mac computer, a Wahoo Kickr Core (https://eu.wahoofitness.com/devices/indoor-cycling/bike-trainers/kickr-core-2-buy), and a Zwift Play Controller (https://eu.zwift.com/de/products/zwift-play?variant=44565285994747), but it should also work on PC and Linux (some adaptations for terminal color output may be required) and with other smart trainers or dumb trainers with speed/cadence sensors.
 
-- It is set up for a MAC computer, a Wahoo Kickr Core (https://eu.wahoofitness.com/devices/indoor-cycling/bike-trainers/kickr-core-2-buy), and a Zwift Play Controller (https://eu.zwift.com/de/products/zwift-play?variant=44565285994747). but can be easyly addapted for PC and Linux and other smart trainer or dumb trainer with speed/cadance sensors.
+⸻
 
-- For steering, a mobile phone attached to the handlebars can also be used. For this, use "Remote Gamepad" (https://remotegamepad.com)or a similar app and configure the tilt as steering input (and buttons).
+Small manual to get it running
+	•	Install a retro game emulator (e.g. Dolphin, https://dolphin-emu.org). Others are also available, and PC games can also be used.
+	•	Download the game/ROM (e.g. Mario Kart Wii, https://apunkagames.click/cdromance/).
+	•	Run the game in the emulator.
+	•	In the emulator, edit the controller button layout. Use the screenshot in the repo to match the button layout used in the scripts, optimized for Mario Kart. Use the “Classic Controller” extension controller configuration.
 
-- To set up, run the "0_Read_Bluetooth_Devices.py" script and copy the relevant address. (e.g. KICKR CORE 5836: D181282F-9CD3-AF69-9E8B-1A8113A614E6) only the last section of the output is needed.
-Add the adress to the control scripts [2-7]. (DEVICE_ADDRESS = "D181282F-9CD3-AF69-9E8B-1A8113A614E6")
+⸻
 
-- To play: run the script "1_MarioKart_ZwiftPlay_to_Keyboard.py" and one of scripts [2-7]. They need to run in separate terminal windows. (python python 1_MarioKart_ZwiftPlay_to_Keyboard.py) & (python 2_MarioKart_ERG_mode_Constat_Power.py)
+Python setup
+	•	Install Python: download and install it from
+https://www.python.org/downloads/
+(important: check “Add to PATH” during installation)
+	•	Open a terminal on Mac or Linux. On Windows, type “cmd” into the Windows search bar.
+	•	In the terminal, type
+python --version
+and press Enter.
+If an error appears, ask ChatGPT.
+	•	In the terminal, type
+pip install bleak pynput pycycling
+and press Enter.
 
-- Run game (eg. Mario Kart for Wii, https://apunkagames.click/cdromance/) in an emulator (e.g.  Dolphin, https://dolphin-emu.org). 
+⸻
 
-- In the emulator Edit the controller button layout us, use the screenshot to use the button layout as in the scripts. Use the "Classic Controler" extension for the button layout.
+Trainer setup
+	•	In the terminal, type python  (with a trailing space), then drag the file 0_Read_Bluetooth_Devices.py into the terminal and press Enter.
+	•	The terminal should display output. Copy the device address (the long number after Wahoo, Tacx, etc., e.g.
+DEVICE_ADDRESS = "D181282F-9CD3-AF69-9E8B-1A8113A614E6").
+	•	Open the file 2_MarioKart_ERG_mode_Constat_Power.py with Notepad, VS Code, Python Launcher, etc., and replace the device address on line 7 with the copied address. Save and close the file.
+	•	Open a new terminal (Windows: cmd) and again type python  (with a trailing space), then drag 2_MarioKart_ERG_mode_Constat_Power.py into the terminal and press Enter.
+	•	Enter the watts you want to ride. If nothing is entered, the default is 160 W.
+	•	Click on the Mario Kart window. Pedaling should now control the throttle.
+Key mapping:
+	•	cadence > 100.0 RPM → 'A' + 'Up'
+	•	cadence > 65.0 RPM and ≤ 100.0 RPM → 'A'
+	•	cadence > 30.0 RPM and ≤ 60.0 RPM → ''
+	•	cadence < 30.0 RPM → 'B'
+This can be changed in the script.
+	•	Scripts 3 to 7 provide different variable power profiles, but work very similarly to script 2.
 
-- The button layouts can also be edited in the scripts:
+⸻
+
+Steering with Zwift Play Controllers
+	•	Power on the controllers.
+	•	Open a new terminal (Windows: cmd) and type python  (with a trailing space), then drag 1_MarioKart_ZwiftPlay_to_Keyboard.py into the terminal and press Enter.
+	•	The script will find the controllers automatically. Click on the game (Mario Kart) window. The controllers should now control the game.
+	•	Phone alternative: A mobile phone mounted on the handlebars can also be used. Use Remote Gamepad (https://remotegamepad.com) or a similar app and configure tilt as steering input (and buttons).
+
+⸻
+
+Button layout (editable in the scripts)
 KEY_MAPPING_LEFT = {
     "Y": "up",                   # Up button -> Up arrow
     "Z": "left",                 # Left button -> Left arrow
@@ -47,6 +86,9 @@ and
     else:
         pass  # No keys needed
 
-- When running the scipts it askes for power setting in Watts, if nothing is entered it uses defold values.
 
-- Play!
+To play
+	•	The emulator with the game must be running.
+	•	1_MarioKart_ZwiftPlay_to_Keyboard.py must be running in one terminal.
+	•	2_MarioKart_ERG_mode_Constat_Power.py (or scripts 3–7) must be running in another terminal.
+	•	Click on the game window to give it focus.
