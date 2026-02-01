@@ -26,6 +26,16 @@ and press Enter.
 
 ⸻
 
+Optional: Garmin Cadence Sensor 2 (external cadence)
+	•	If you have a separate cadence sensor (e.g. Garmin Cadence Sensor 2), you can use it as the cadence input instead of the trainer’s cadence.
+	•	In the terminal, run 0_Read_Bluetooth_Devices.py and copy your cadence sensor address (often shows as “Cadence” or “Garmin”).
+	•	Open the script you use (2–7) and set:
+		•	USE_EXTERNAL_CADENCE_SENSOR = True
+		•	CADENCE_SENSOR_ADDRESS = "<paste address here>"
+	•	Run the script normally. If the cadence sensor can’t connect, it will fall back to trainer cadence.
+
+⸻
+
 Trainer setup
 	•	In the terminal, type python  (with a trailing space), then drag the file 0_Read_Bluetooth_Devices.py into the terminal and press Enter.
 	•	The terminal should display output. Copy the device address (the long number after Wahoo, Tacx, etc., e.g.
@@ -41,14 +51,26 @@ Key mapping:
 	•	cadence < 30.0 RPM → 'B'
 This can be changed in the script.
 	•	Scripts 3 to 7 provide different variable power profiles, but work very similarly to script 2.
+	•	If you want to ONLY read/display cadence (no ERG / no power control), run 8_Read_Cadence_Only.py.
 
 ⸻
 
 Steering with Zwift Play Controllers
 	•	Power on the controllers.
-	•	Open a new terminal (Windows: cmd) and type python  (with a trailing space), then drag 1_MarioKart_ZwiftPlay_to_Keyboard.py into the terminal and press Enter.
+	•	If you run any of scripts 2–7, the Zwift Play mapping is integrated by default (ENABLE_ZWIFT_PLAY_CONTROLLERS = True), so you normally do NOT need to run a second script.
+	•	Optional (controllers only): Open a new terminal (Windows: cmd) and type python  (with a trailing space), then drag 1_MarioKart_ZwiftPlay_to_Keyboard.py into the terminal and press Enter.
 	•	The script will find the controllers automatically. Click on the game (Mario Kart) window. The controllers should now control the game.
 	•	Phone alternative: A mobile phone mounted on the handlebars can also be used. Use Remote Gamepad (https://remotegamepad.com) or a similar app and configure tilt as steering input (and buttons).
+
+⸻
+
+Optional: On-screen cadence overlay (always on top)
+	•	Scripts 2–7 can show a small always-on-top cadence overlay in the top-left corner.
+	•	In the script you run, set:
+		•	ENABLE_CADENCE_OVERLAY = True
+		•	OVERLAY_AUTOSTART = True
+	•	Tip: If your game is in exclusive fullscreen, the overlay may not appear. Borderless/windowed fullscreen works best.
+	•	Press Escape while the overlay window is focused to close it.
 
 ⸻
 
@@ -89,6 +111,6 @@ and
 
 To play
 	•	The emulator with the game must be running.
-	•	1_MarioKart_ZwiftPlay_to_Keyboard.py must be running in one terminal.
-	•	2_MarioKart_ERG_mode_Constat_Power.py (or scripts 3–7) must be running in another terminal.
+	•	Run ONE script: 2_MarioKart_ERG_mode_Constat_Power.py (or scripts 3–7).
+	•	By default it will also connect Zwift Play controllers (ENABLE_ZWIFT_PLAY_CONTROLLERS = True) and show the cadence overlay (ENABLE_CADENCE_OVERLAY = True).
 	•	Click on the game window to give it focus.
