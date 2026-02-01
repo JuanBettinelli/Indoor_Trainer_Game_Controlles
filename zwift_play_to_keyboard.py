@@ -16,7 +16,7 @@ The mapper will:
 """
 
 import asyncio
-from typing import Dict, Tuple, List, Optional, Set
+from typing import Dict, Tuple, List, Optional, Set, Any
 
 from bleak import BleakClient, BleakScanner
 from pynput.keyboard import Controller, Key
@@ -79,6 +79,16 @@ keyboard = Controller()
 # Track pressed keys per device to avoid duplicate presses
 device_pressed_keys: Dict[str, Set[str]] = {}
 
+# Persist inferred controller side per device label.
+# Some notifications (notably analog/paddle updates) may omit FIELD_RIGHT_PAD,
+# so re-inferring side on every packet can cause flapping.
+device_side: Dict[str, str] = {}
+
+# Paddle analog LR thresholds (zigzag-decoded signed int).
+# Use hysteresis to keep holds stable when the analog value jitters.
+PADDLE_ON_THRESHOLD = 80
+PADDLE_OFF_THRESHOLD = 60
+
 
 def _read_varint(buf: bytes, i: int) -> Tuple[int, int]:
     """Read protobuf varint starting at index i. Returns (value, next_index)."""
@@ -121,11 +131,19 @@ def parse_play_keypad_status(message: bytes) -> Dict[int, int]:
     return fields
 
 
-def decode_buttons(fields: Dict[int, int]) -> Dict[str, List[str]]:
-    """Return a human-friendly dict with side + pressed buttons."""
-    side = "right" if fields.get(FIELD_RIGHT_PAD, OFF) == ON else "left"
+def decode_buttons(fields: Dict[int, int], *, side_override: Optional[str] = None) -> Dict[str, Any]:
+    """Return a human-friendly dict with side + pressed buttons.
+
+    Notes:
+    - Some packets may omit FIELD_RIGHT_PAD, so caller may pass side_override.
+    - Paddles are derived from analog LR; caller may add hysteresis.
+    """
+    if side_override is not None:
+        side = side_override
+    else:
+        side = "right" if fields.get(FIELD_RIGHT_PAD, OFF) == ON else "left"
+
     pressed: List[str] = []
-    paddles: List[str] = []
 
     if fields.get(FIELD_Y_UP) == ON:
         pressed.append("Y")
@@ -143,10 +161,8 @@ def decode_buttons(fields: Dict[int, int]) -> Dict[str, List[str]]:
     analog_lr = fields.get(FIELD_ANALOG_LR)
     if analog_lr is not None:
         analog_lr = _zigzag_decode(analog_lr)
-        if abs(analog_lr) >= 100:
-            paddles.append("right_paddle" if side == "right" else "left_paddle")
 
-    return {"side": side, "buttons": pressed, "paddles": paddles}
+    return {"side": side, "buttons": pressed, "analog_lr": analog_lr}
 
 
 def get_key_object(key_name: str):
@@ -227,7 +243,8 @@ async def connect_to_controller(
     key_mapping_right: Dict[str, str],
 ) -> None:
     """Connect to a controller and map buttons to keyboard."""
-    device_label = f"[{device.name or 'Unknown'}]"
+    # Include address to avoid collisions when multiple controllers share the same name.
+    device_label = f"[{device.name or 'Unknown'} {device.address}]"
     device_pressed_keys[device_label] = set()
 
     print(f"{device_label} Connecting ({device.address})...")
@@ -253,10 +270,35 @@ async def connect_to_controller(
                 if msg_type == PLAY_NOTIFICATION_MESSAGE_TYPE:
                     try:
                         fields = parse_play_keypad_status(payload)
-                        info = decode_buttons(fields)
-                        side = info["side"]
+                        # Persist side per device to avoid side flapping if FIELD_RIGHT_PAD is omitted.
+                        side = device_side.get(device_label)
+                        if FIELD_RIGHT_PAD in fields:
+                            side = "right" if fields.get(FIELD_RIGHT_PAD, OFF) == ON else "left"
+                            device_side[device_label] = side
+                        if side is None:
+                            side = "left"
+                            device_side[device_label] = side
 
-                        current_buttons = set(info["buttons"]) | set(info["paddles"])
+                        info = decode_buttons(fields, side_override=side)
+
+                        previous_buttons = device_pressed_keys.get(device_label, set()).copy()
+                        current_buttons = set(info["buttons"])
+
+                        # Paddle handling via analog LR with hysteresis.
+                        analog_lr = info.get("analog_lr")
+                        if isinstance(analog_lr, int):
+                            # Right paddle
+                            if analog_lr >= PADDLE_ON_THRESHOLD:
+                                current_buttons.add("right_paddle")
+                            elif "right_paddle" in previous_buttons and analog_lr >= PADDLE_OFF_THRESHOLD:
+                                current_buttons.add("right_paddle")
+
+                            # Left paddle
+                            if analog_lr <= -PADDLE_ON_THRESHOLD:
+                                current_buttons.add("left_paddle")
+                            elif "left_paddle" in previous_buttons and analog_lr <= -PADDLE_OFF_THRESHOLD:
+                                current_buttons.add("left_paddle")
+
                         previous_buttons = device_pressed_keys.get(device_label, set()).copy()
 
                         for button in previous_buttons - current_buttons:
