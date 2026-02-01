@@ -5,8 +5,12 @@ from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
 from overlay_udp import OverlayClient, OverlayConfig
+from zwift_play_to_keyboard import run_zwift_play_mapper_forever
 
 DEVICE_ADDRESS = "D181282F-9CD3-AF69-9E8B-1A8113A614E6"
+
+# Optional: Run Zwift Play controller mapping inside this script (so you only run one script).
+ENABLE_ZWIFT_PLAY_CONTROLLERS = True
 
 # Optional: Map cadence to keyboard keys (for games) while only reading cadence (no ERG control).
 # Note: your game window must be focused for key presses to work.
@@ -30,7 +34,7 @@ TRAINER_ZERO_CADENCE_POWER_WATTS = 5.0
 # Optional: Show an always-on-top cadence overlay in the top-left corner.
 # Note: If your game is in exclusive fullscreen, the overlay may not appear.
 # Use borderless/windowed fullscreen for best results.
-ENABLE_CADENCE_OVERLAY = True
+ENABLE_CADENCE_OVERLAY = False
 OVERLAY_AUTOSTART = True
 OVERLAY_PORT = 49555
 
@@ -102,6 +106,14 @@ async def run(address: str):
         trainer = FitnessMachineService(trainer_client)
 
         _overlay.start()
+
+        zwift_task = None
+        if ENABLE_ZWIFT_PLAY_CONTROLLERS:
+            zwift_task = asyncio.create_task(
+                run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
+                name="zwift-play-mapper",
+            )
+            print("Zwift Play mapper started (integrated).")
 
         cadence_client = None
         cadence_notify_active = False
@@ -189,6 +201,13 @@ async def run(address: str):
         finally:
             for key in current_keys_pressed:
                 keyboard.release(key)
+
+            if zwift_task is not None:
+                zwift_task.cancel()
+                try:
+                    await asyncio.wait_for(zwift_task, timeout=2.0)
+                except Exception:
+                    pass
 
             if cadence_client is not None:
                 try:

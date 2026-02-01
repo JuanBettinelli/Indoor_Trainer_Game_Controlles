@@ -12,7 +12,7 @@ from zwift_play_to_keyboard import run_zwift_play_mapper_forever
 DEVICE_ADDRESS = "D181282F-9CD3-AF69-9E8B-1A8113A614E6"
 
 # Optional: Run Zwift Play controller mapping inside this script (so you only run one script).
-ENABLE_ZWIFT_PLAY_CONTROLLERS = False
+ENABLE_ZWIFT_PLAY_CONTROLLERS = True
 
 # Optional: Use an external cadence sensor (e.g., Garmin Cadence Sensor 2) instead of trainer cadence.
 USE_EXTERNAL_CADENCE_SENSOR = True
@@ -27,7 +27,7 @@ TRAINER_ZERO_CADENCE_POWER_WATTS = 5.0
 # Optional: Show an always-on-top cadence overlay in the top-left corner.
 # Note: If your game is in exclusive fullscreen, the overlay may not appear.
 # Use borderless/windowed fullscreen for best results.
-ENABLE_CADENCE_OVERLAY = True
+ENABLE_CADENCE_OVERLAY = False
 OVERLAY_AUTOSTART = True
 OVERLAY_PORT = 49555
 
