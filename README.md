@@ -55,6 +55,39 @@ This can be changed in the script.
 
 ⸻
 
+Intervals.icu workouts in ERG mode (script 9)
+	•	`9_MarioKart_Intervals_Workout.py` loads a planned cycling workout from Intervals.icu and runs its power prescription on the trainer.
+	•	It uses the same Intervals.icu API key stored by the AI Coach tool in macOS Keychain. No API key is stored in this repository.
+	•	Supported steps: timed fixed watts, timed FTP percentages, power ranges, linear ramps, cadence targets, repetitions, and `freeride`.
+	•	Heart-rate-only, pace-only, zone-only, and distance-based steps are rejected because they cannot be converted safely into an ERG target.
+	•	`freeride` resets trainer control for that step and restores ERG control at the next power-controlled step. This is suitable for a 20-minute FTP test.
+
+Preview and start today's cycling workout:
+
+```sh
+python 9_MarioKart_Intervals_Workout.py --date today --ftp 280
+```
+
+Run a hardware-free, accelerated simulation first:
+
+```sh
+python 9_MarioKart_Intervals_Workout.py \
+  --date today --ftp 280 --simulate --simulation-speed 120
+```
+
+Read an AI Coach plan file without contacting Intervals.icu:
+
+```sh
+python 9_MarioKart_Intervals_Workout.py \
+  --date 2026-08-06 --ftp 280 \
+  --local-plan /Users/juanbettinelli/Documents/AI_Coach/intervals_icu_tool/example_week.json \
+  --simulate
+```
+
+The complete workout is resolved into watts and shown before any Bluetooth connection is opened. By default, targets above 600 W are rejected. Change the safety ceiling explicitly with `--max-watts` only after reviewing the preview.
+
+⸻
+
 Steering with Zwift Play Controllers
 	•	Power on the controllers.
 	•	If you run any of scripts 2–7, the Zwift Play mapping is integrated by default (ENABLE_ZWIFT_PLAY_CONTROLLERS = True), so you normally do NOT need to run a second script.
