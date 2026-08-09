@@ -29,9 +29,10 @@ and press Enter.
 Bluetooth device setup
 	•	Run `0_Setup_Devices.py` to scan for and assign devices once.
 	•	The setup supports an indoor trainer, power meter, cadence sensor, heart-rate sensor, Zwift Play controllers, and Zwift Click controllers.
-	•	Detected service UUIDs and device names are used to mark likely candidates, but you always make the final selection.
+	•	First select every device you want to add or update from one common list. Then assign one or multiple types to each selected device.
+	•	Detected service UUIDs and device names provide type suggestions, but you always make the final assignment.
 	•	Selections are stored in the local `devices.json`. This file is intentionally excluded from Git because Bluetooth addresses are computer-specific.
-	•	Run the setup again at any time to replace, add, or clear devices. Press Enter for a role to keep its current setting and enter `-` to clear it.
+	•	Run the setup again at any time to add or update devices. Unselected saved devices remain unchanged. Select a saved device and enter `-` at the type prompt to remove it from every role.
 
 ```sh
 python 0_Setup_Devices.py

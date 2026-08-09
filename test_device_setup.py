@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from device_config import configured_address, configured_addresses, empty_config, load_device_config
 
@@ -51,6 +52,55 @@ class DeviceSetupTests(unittest.TestCase):
             config = load_device_config(Path(temp) / "missing.json")
         self.assertIsNone(config["devices"]["power_meter"])
         self.assertEqual([], config["devices"]["zwift_click"])
+
+    def test_device_can_be_assigned_to_multiple_roles(self):
+        config = empty_config()
+        trainer = setup_devices.ScannedDevice(
+            "KICKR CORE", "T1", (setup_devices.FTMS_SERVICE, setup_devices.CSC_SERVICE)
+        )
+        setup_devices.assign_device(config, trainer, {"indoor_trainer", "cadence_sensor"})
+        self.assertEqual("T1", config["devices"]["indoor_trainer"]["address"])
+        self.assertEqual("T1", config["devices"]["cadence_sensor"]["address"])
+        self.assertEqual(
+            {"indoor_trainer", "cadence_sensor"},
+            setup_devices.roles_for_address(config, "T1"),
+        )
+
+    def test_reassigning_device_removes_old_roles_but_keeps_other_devices(self):
+        config = empty_config()
+        first = setup_devices.ScannedDevice("Sensor A", "A", ())
+        second = setup_devices.ScannedDevice("Sensor B", "B", ())
+        setup_devices.assign_device(config, first, {"cadence_sensor", "zwift_play"})
+        setup_devices.assign_device(config, second, {"heart_rate_sensor"})
+        setup_devices.assign_device(config, first, {"power_meter"})
+        self.assertIsNone(config["devices"]["cadence_sensor"])
+        self.assertEqual([], config["devices"]["zwift_play"])
+        self.assertEqual("A", config["devices"]["power_meter"]["address"])
+        self.assertEqual("B", config["devices"]["heart_rate_sensor"]["address"])
+
+    def test_assigning_empty_roles_removes_device(self):
+        config = empty_config()
+        play = setup_devices.ScannedDevice("Zwift Play", "P1", ())
+        setup_devices.assign_device(config, play, {"zwift_play"})
+        setup_devices.assign_device(config, play, set())
+        self.assertEqual([], config["devices"]["zwift_play"])
+
+    def test_device_first_selection_accepts_multiple_devices(self):
+        config = empty_config()
+        devices = [
+            setup_devices.ScannedDevice("Trainer", "T1", ()),
+            setup_devices.ScannedDevice("HRM", "H1", ()),
+        ]
+        with patch("builtins.input", return_value="1,2"):
+            selected = setup_devices.choose_devices(devices, config)
+        self.assertEqual(["T1", "H1"], [device.address for device in selected])
+
+    def test_type_selection_accepts_multiple_roles(self):
+        config = empty_config()
+        device = setup_devices.ScannedDevice("Combined sensor", "C1", ())
+        with patch("builtins.input", return_value="2,3"):
+            roles = setup_devices.choose_roles_for_device(device, config)
+        self.assertEqual({"power_meter", "cadence_sensor"}, roles)
 
 
 if __name__ == "__main__":

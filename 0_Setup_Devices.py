@@ -112,39 +112,93 @@ def show_config(config: dict[str, Any], path: Path) -> None:
         print(f"{ROLE_LABELS[role]:<28} {text}")
 
 
-def _existing_text(config: dict[str, Any], role: str) -> str:
-    value = config["devices"].get(role)
-    records = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
-    return ", ".join(item.get("name") or item.get("address") or "Unknown" for item in records) or "none"
+def roles_for_address(config: dict[str, Any], address: str) -> set[str]:
+    roles: set[str] = set()
+    for role in ALL_DEVICE_ROLES:
+        value = config["devices"].get(role)
+        records = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+        if any(item.get("address") == address for item in records):
+            roles.add(role)
+    return roles
 
 
-def choose_for_role(
-    role: str, devices: list[ScannedDevice], config: dict[str, Any]
-) -> dict[str, Any] | list[dict[str, Any]] | None:
-    candidates = sorted(
-        enumerate(devices, 1),
-        key=lambda pair: (role not in suggested_roles(pair[1]), pair[1].name.lower()),
-    )
-    print(f"\n{ROLE_LABELS[role]} — current: {_existing_text(config, role)}")
-    print("Enter keeps the current selection; '-' clears it.")
-    if role in MULTI_DEVICE_ROLES:
-        print("Select one or more numbers separated by commas.")
-    for display_index, (original_index, device) in enumerate(candidates, 1):
-        marker = "*" if role in suggested_roles(device) else " "
-        print(f"{display_index:>2}{marker} {device_summary(device)}")
-    answer = input("Selection: ").strip()
+def remove_address(config: dict[str, Any], address: str) -> None:
+    for role in ALL_DEVICE_ROLES:
+        value = config["devices"].get(role)
+        if role in MULTI_DEVICE_ROLES:
+            config["devices"][role] = [
+                item for item in (value or []) if item.get("address") != address
+            ]
+        elif isinstance(value, dict) and value.get("address") == address:
+            config["devices"][role] = None
+
+
+def assign_device(config: dict[str, Any], device: ScannedDevice, roles: set[str]) -> None:
+    invalid = roles - set(ALL_DEVICE_ROLES)
+    if invalid:
+        raise DeviceConfigError(f"Unknown device role(s): {', '.join(sorted(invalid))}")
+    remove_address(config, device.address)
+    record = device.as_config_record()
+    for role in roles:
+        if role in MULTI_DEVICE_ROLES:
+            records = config["devices"].setdefault(role, [])
+            if not any(item.get("address") == device.address for item in records):
+                records.append(dict(record))
+        else:
+            config["devices"][role] = dict(record)
+
+
+def choose_devices(devices: list[ScannedDevice], config: dict[str, Any]) -> list[ScannedDevice]:
+    print("\nAvailable Bluetooth devices:")
+    print("'*' indicates an automatic type suggestion; '[saved]' means already configured.\n")
+    for index, device in enumerate(devices, 1):
+        suggested = "*" if suggested_roles(device) else " "
+        saved = " [saved]" if roles_for_address(config, device.address) else ""
+        print(f"{index:>2}{suggested} {device_summary(device)}{saved}")
+    answer = input("\nSelect devices to add or update (comma-separated, Enter to keep all unchanged): ").strip()
     if not answer:
-        return config["devices"].get(role)
-    if answer == "-":
-        return [] if role in MULTI_DEVICE_ROLES else None
+        return []
     try:
-        selected_indexes = [int(part.strip()) for part in answer.split(",")]
-        if role not in MULTI_DEVICE_ROLES and len(selected_indexes) != 1:
+        indexes = [int(part.strip()) for part in answer.split(",")]
+        if not indexes or len(indexes) != len(set(indexes)):
             raise ValueError
-        selected = [candidates[index - 1][1].as_config_record() for index in selected_indexes]
+        return [devices[index - 1] for index in indexes]
     except (ValueError, IndexError) as exc:
-        raise DeviceConfigError(f"Invalid selection for {ROLE_LABELS[role]}") from exc
-    return selected if role in MULTI_DEVICE_ROLES else selected[0]
+        raise DeviceConfigError("Invalid device selection") from exc
+
+
+def choose_roles_for_device(device: ScannedDevice, config: dict[str, Any]) -> set[str]:
+    current = roles_for_address(config, device.address)
+    suggested = suggested_roles(device)
+    defaults = current or suggested
+    print(f"\nAssign type(s) for: {device.name} ({device.address})")
+    for index, role in enumerate(ALL_DEVICE_ROLES, 1):
+        markers = []
+        if role in suggested:
+            markers.append("suggested")
+        if role in current:
+            markers.append("current")
+        suffix = f" [{' / '.join(markers)}]" if markers else ""
+        print(f"{index}. {ROLE_LABELS[role]}{suffix}")
+    default_text = ", ".join(str(ALL_DEVICE_ROLES.index(role) + 1) for role in ALL_DEVICE_ROLES if role in defaults)
+    prompt = "Select one or more types (comma-separated)"
+    if default_text:
+        prompt += f" [default: {default_text}]"
+    prompt += "; '-' removes this device: "
+    answer = input(prompt).strip()
+    if answer == "-":
+        return set()
+    if not answer:
+        if defaults:
+            return set(defaults)
+        raise DeviceConfigError(f"No type selected for {device.name}")
+    try:
+        indexes = [int(part.strip()) for part in answer.split(",")]
+        if not indexes or len(indexes) != len(set(indexes)):
+            raise ValueError
+        return {ALL_DEVICE_ROLES[index - 1] for index in indexes}
+    except (ValueError, IndexError) as exc:
+        raise DeviceConfigError(f"Invalid type selection for {device.name}") from exc
 
 
 def atomic_write(path: Path, config: dict[str, Any]) -> None:
@@ -160,9 +214,10 @@ async def configure(args: argparse.Namespace) -> None:
     devices = await scan_devices(args.scan_seconds)
     if not devices:
         raise DeviceConfigError("No Bluetooth devices found")
-    print(f"Found {len(devices)} devices. Suggested devices are marked with '*'.")
-    for role in ALL_DEVICE_ROLES:
-        config["devices"][role] = choose_for_role(role, devices, config)
+    print(f"Found {len(devices)} devices.")
+    selected = choose_devices(devices, config)
+    for device in selected:
+        assign_device(config, device, choose_roles_for_device(device, config))
     config["updated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
     print("\nProposed configuration:\n")
     show_config(config, args.output)
@@ -200,4 +255,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
