@@ -29,6 +29,12 @@ class WorkoutError(RuntimeError):
     pass
 
 
+def is_affirmative_response(value: str) -> bool:
+    """Accept yes even when a prior macOS function key left a CSI sequence in stdin."""
+    without_terminal_keys = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
+    return without_terminal_keys.strip().lower() in {"y", "yes", "j", "ja"}
+
+
 @dataclass(frozen=True)
 class WorkoutStep:
     name: str

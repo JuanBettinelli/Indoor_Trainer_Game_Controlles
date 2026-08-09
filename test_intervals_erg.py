@@ -2,10 +2,15 @@ import datetime as dt
 import unittest
 
 from erg_workout_runner import WorkoutTimeline, interval_countdown_cues, step_power, workout_preview
-from intervals_workout import WorkoutError, parse_workout_description
+from intervals_workout import WorkoutError, is_affirmative_response, parse_workout_description
 
 
 class ParserTests(unittest.TestCase):
+    def test_affirmative_response_ignores_function_key_escape_sequence(self):
+        self.assertTrue(is_affirmative_response("\x1b[24~y"))
+        self.assertTrue(is_affirmative_response("ja"))
+        self.assertFalse(is_affirmative_response("\x1b[24~n"))
+
     def test_repeats_ramps_percent_watts_and_freeride(self):
         description = """Warmup
 - Easy 10m 50%

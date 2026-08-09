@@ -21,6 +21,7 @@ from erg_workout_runner import WorkoutTimeline, format_seconds, interval_countdo
 from intervals_workout import (
     Workout,
     WorkoutError,
+    is_affirmative_response,
     list_ride_events,
     load_workouts_from_plan,
     upload_activity_file,
@@ -390,7 +391,7 @@ def main() -> int:
         print("\n" + workout_preview(timeline) + "\n")
         if not args.simulate:
             require_fit_export()
-        if not args.yes and input("Start workout? [y/N]: ").strip().lower() not in {"y", "yes", "j", "ja"}:
+        if not args.yes and not is_affirmative_response(input("Start workout? [y/N]: ")):
             print("Cancelled before trainer connection.")
             return 0
         if args.simulation_speed <= 0:
@@ -435,7 +436,7 @@ def main() -> int:
             print(f"\nFIT activity saved: {fit_path}")
             print(f"Raw sensor data saved: {recorder.raw_path}")
             should_upload = not args.no_upload and (
-                args.yes or input("Upload completed activity to Intervals.icu? [y/N]: ").strip().lower() in {"y", "yes", "j", "ja"}
+                args.yes or is_affirmative_response(input("Upload completed activity to Intervals.icu? [y/N]: "))
             )
             if should_upload:
                 result = upload_activity_file(
