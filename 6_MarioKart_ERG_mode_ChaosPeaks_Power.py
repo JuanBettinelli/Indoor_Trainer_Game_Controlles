@@ -6,6 +6,7 @@ from pynput.keyboard import Controller, Key
 from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
+from erg_power_adjustment import ErgPowerAdjustment
 from overlay_udp import OverlayClient, OverlayConfig
 from runtime_devices import CADENCE_SENSOR_ADDRESS, INDOOR_TRAINER_ADDRESS
 from zwift_play_to_keyboard import run_zwift_play_mapper_forever
@@ -84,6 +85,7 @@ Boost_CADENCE_THRESHOLD = 90.0
 
 # Chaos peaks tracking
 TARGET_POWER_WATTS = BASE_POWER_WATTS
+power_adjustment = ErgPowerAdjustment()
 current_peak_power = None
 current_peak_duration = None
 peak_start_time = None
@@ -198,7 +200,7 @@ def log_bike_data(data):
         peak_indicator = colorize("[base]", Colors.BLUE)
     
     print(
-        f"{peak_indicator} ERG target {TARGET_POWER_WATTS} W | "
+        f"{peak_indicator} ERG target {power_adjustment.target(TARGET_POWER_WATTS)} W | "
         f"Power: {power} W | "
         f"{cadence_str} | "
         f"Speed: {speed:.1f} km/h | "
@@ -261,7 +263,10 @@ async def run(address: str):
         zwift_task = None
         if ENABLE_ZWIFT_PLAY_CONTROLLERS:
             zwift_task = asyncio.create_task(
-                run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
+                run_zwift_play_mapper_forever(
+                    rescan_interval_seconds=5.0,
+                    on_click_power_delta=lambda direction: power_adjustment.change(direction, TARGET_POWER_WATTS),
+                ),
                 name="zwift-play-mapper",
             )
             print("Zwift Play mapper started (integrated).")
@@ -318,7 +323,7 @@ async def run(address: str):
         next_peak_time = asyncio.get_event_loop().time() + random.uniform(3, 10)
         await generate_random_peak()
         
-        await trainer.set_target_power(TARGET_POWER_WATTS)
+        await trainer.set_target_power(power_adjustment.target(TARGET_POWER_WATTS))
         print(f"⚡ Chaos Peaks mode: Random power spikes on {BASE_POWER_WATTS} W base")
         print(f"Peaks range: {int(BASE_POWER_WATTS * 1.2)} W to {int(BASE_POWER_WATTS * MAX_PEAK_POWER_MULTIPLIER)} W")
         print(f"Duration: Higher power = shorter peaks (3-15 seconds)")
@@ -329,7 +334,7 @@ async def run(address: str):
             while True:
                 await _ensure_cadence_sensor_connected()
                 await update_chaos_peaks()
-                await trainer.set_target_power(TARGET_POWER_WATTS)
+                await trainer.set_target_power(power_adjustment.target(TARGET_POWER_WATTS))
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
             print("Stopping ERG session…")

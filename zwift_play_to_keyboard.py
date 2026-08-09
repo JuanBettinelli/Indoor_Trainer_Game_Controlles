@@ -16,7 +16,7 @@ The mapper will:
 """
 
 import asyncio
-from typing import Dict, Tuple, List, Optional, Set, Any
+from typing import Dict, Tuple, List, Optional, Set, Any, Callable
 
 from bleak import BleakClient, BleakScanner
 from pynput.keyboard import Controller, Key
@@ -232,6 +232,7 @@ async def connect_to_controller(
     key_mapping_left: Dict[str, str],
     key_mapping_right: Dict[str, str],
     key_mapping_click: Dict[str, str],
+    on_click_power_delta: Optional[Callable[[int], None]],
 ) -> None:
     """Connect to a controller and map buttons to keyboard."""
     # Include address to avoid collisions when multiple controllers share the same name.
@@ -268,9 +269,13 @@ async def connect_to_controller(
                         if fields.get(2) == ON:
                             current_buttons.add("Minus")
                         for button in previous_buttons - current_buttons:
-                            release_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
+                            if on_click_power_delta is None:
+                                release_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
                         for button in current_buttons - previous_buttons:
-                            press_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
+                            if on_click_power_delta is not None:
+                                on_click_power_delta(1 if button == "Plus" else -1)
+                            else:
+                                press_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
                         device_pressed_keys[device_label] = current_buttons
                     except Exception as e:
                         print(f"{device_label} Error parsing ClickKeyPadStatus: {e}; raw={payload.hex(' ')}")
@@ -374,6 +379,7 @@ async def start_controller_mapper(
     key_mapping_left: Optional[Dict[str, str]] = None,
     key_mapping_right: Optional[Dict[str, str]] = None,
     key_mapping_click: Optional[Dict[str, str]] = None,
+    on_click_power_delta: Optional[Callable[[int], None]] = None,
 ) -> None:
     """Scan once and connect to discovered controllers (runs until disconnect/cancel)."""
     key_mapping_left = KEY_MAPPING_LEFT if key_mapping_left is None else key_mapping_left
@@ -396,6 +402,7 @@ async def start_controller_mapper(
             key_mapping_left=key_mapping_left,
             key_mapping_right=key_mapping_right,
             key_mapping_click=key_mapping_click,
+            on_click_power_delta=on_click_power_delta,
         )
         for device in devices
     ]
@@ -414,6 +421,7 @@ async def run_zwift_play_mapper_forever(
     key_mapping_left: Optional[Dict[str, str]] = None,
     key_mapping_right: Optional[Dict[str, str]] = None,
     key_mapping_click: Optional[Dict[str, str]] = None,
+    on_click_power_delta: Optional[Callable[[int], None]] = None,
 ) -> None:
     """Continuously scan/connect so you can run this in the background."""
     while True:
@@ -429,6 +437,7 @@ async def run_zwift_play_mapper_forever(
                     key_mapping_left=key_mapping_left,
                     key_mapping_right=key_mapping_right,
                     key_mapping_click=key_mapping_click,
+                    on_click_power_delta=on_click_power_delta,
                 )
             else:
                 configured_clicks = addresses_for("zwift_click") or []
@@ -449,6 +458,7 @@ async def run_zwift_play_mapper_forever(
                             key_mapping_left=key_mapping_left,
                             key_mapping_right=key_mapping_right,
                             key_mapping_click=key_mapping_click,
+                            on_click_power_delta=on_click_power_delta,
                         )
                         for controller_type, address in targets
                     ),

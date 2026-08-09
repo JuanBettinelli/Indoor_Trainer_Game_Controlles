@@ -16,6 +16,7 @@ from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
 from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, load_device_config
+from erg_power_adjustment import ErgPowerAdjustment
 from erg_workout_runner import WorkoutTimeline, format_seconds, workout_preview
 from intervals_workout import (
     Workout,
@@ -171,6 +172,15 @@ async def run_trainer(
     latest = {"power": 0.0, "cadence": 0.0, "speed": 0.0, "source": "Trainer"}
     start_time = time.monotonic()
     last_log = 0.0
+    power_adjustment = ErgPowerAdjustment(maximum_watts=timeline.max_watts)
+    current_base_target: dict[str, int | None] = {"watts": None}
+
+    def change_erg_target(direction: int) -> None:
+        base_target = current_base_target["watts"]
+        if base_target is None:
+            print("Zwift Click ignored: ERG is currently disabled.")
+            return
+        power_adjustment.change(direction, base_target)
 
     async with BleakClient(address) as trainer_client:
         trainer = FitnessMachineService(trainer_client)
@@ -183,7 +193,10 @@ async def run_trainer(
             if controller_addresses is None:
                 zwift_tasks.append(
                     asyncio.create_task(
-                        run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
+                        run_zwift_play_mapper_forever(
+                            rescan_interval_seconds=5.0,
+                            on_click_power_delta=change_erg_target,
+                        ),
                         name="zwift-play-mapper",
                     )
                 )
@@ -196,6 +209,7 @@ async def run_trainer(
                                 max_controllers=1,
                                 controller_type=controller_type,
                                 rescan_interval_seconds=5.0,
+                                on_click_power_delta=change_erg_target,
                             ),
                             name=f"zwift-{controller_type}-mapper-{index}",
                         )
@@ -266,6 +280,7 @@ async def run_trainer(
                 await ensure_cadence_sensor()
                 elapsed = time.monotonic() - start_time
                 state = timeline.state_at(elapsed)
+                current_base_target["watts"] = state.target_watts
                 if state.finished:
                     print("\nWorkout complete.")
                     break
@@ -279,17 +294,19 @@ async def run_trainer(
                         erg_active = False
                         last_target = None
                         print("ERG disabled for freeride step.")
-                elif state.target_watts != last_target:
+                else:
+                    adjusted_target = power_adjustment.target(state.target_watts)
+                if state.target_watts is not None and adjusted_target != last_target:
                     if not erg_active:
                         await trainer.request_control()
                         await trainer.start_or_resume()
                         erg_active = True
-                    await trainer.set_target_power(state.target_watts)
-                    last_target = state.target_watts
+                    await trainer.set_target_power(adjusted_target)
+                    last_target = adjusted_target
 
                 now = time.monotonic()
                 if now - last_log >= 1.0:
-                    target = "FREE" if state.target_watts is None else f"{state.target_watts:3d} W"
+                    target = "FREE" if state.target_watts is None else f"{power_adjustment.target(state.target_watts):3d} W"
                     cadence_target = ""
                     if state.step.cadence_min is not None:
                         cadence_target = f" | cadence target {state.step.cadence_min}"

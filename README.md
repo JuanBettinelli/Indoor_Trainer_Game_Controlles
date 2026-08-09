@@ -54,6 +54,8 @@ python 0_Setup_Controllers.py
 
 This creates the local `controller_mapping.json`. You can configure the left and right Zwift Play mappings and the Zwift Click Plus/Minus mappings. Enter `-` for a button to disable it. All integrated controller scripts load this file automatically. To inspect the current mapping without changing it, run `python 0_Setup_Controllers.py --show`.
 
+During ERG workouts (scripts 2–6 and 9), Zwift Click has a dedicated power function: `Plus` raises the smart-trainer target by 5 W and `Minus` lowers it by 5 W. This adjustment is applied as an offset to the current interval target, so it remains active when the workout moves to the next step. Outside an ERG workout, the normal keyboard mapping from `controller_mapping.json` is used.
+
 ⸻
 
 Optional: Garmin Cadence Sensor 2 (external cadence)

@@ -5,6 +5,7 @@ from pynput.keyboard import Controller, Key
 from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
+from erg_power_adjustment import ErgPowerAdjustment
 from overlay_udp import OverlayClient, OverlayConfig
 from runtime_devices import CADENCE_SENSOR_ADDRESS, INDOOR_TRAINER_ADDRESS
 from zwift_play_to_keyboard import run_zwift_play_mapper_forever
@@ -83,6 +84,7 @@ Boost_CADENCE_THRESHOLD = 100.0
 
 # Pyramid interval tracking
 TARGET_POWER_WATTS = LOW_POWER_WATTS
+power_adjustment = ErgPowerAdjustment()
 cycle_start_time = None
 CYCLE_DURATION = 120  # seconds (2 minutes for full cycle)
 RAMP_UP_DURATION = 60  # seconds (half cycle to go from low to high)
@@ -190,7 +192,7 @@ def log_bike_data(data):
     phase_indicator = colorize(f"[{pyramid_phase.upper()}]", Colors.RED if pyramid_phase == "up" else Colors.BLUE)
     
     print(
-        f"{phase_indicator} ERG target {TARGET_POWER_WATTS} W | "
+        f"{phase_indicator} ERG target {power_adjustment.target(TARGET_POWER_WATTS)} W | "
         f"Power: {power} W | "
         f"{cadence_str} | "
         f"Speed: {speed:.1f} km/h | "
@@ -241,7 +243,10 @@ async def run(address: str):
         zwift_task = None
         if ENABLE_ZWIFT_PLAY_CONTROLLERS:
             zwift_task = asyncio.create_task(
-                run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
+                run_zwift_play_mapper_forever(
+                    rescan_interval_seconds=5.0,
+                    on_click_power_delta=lambda direction: power_adjustment.change(direction, TARGET_POWER_WATTS),
+                ),
                 name="zwift-play-mapper",
             )
             print("Zwift Play mapper started (integrated).")
@@ -295,7 +300,7 @@ async def run(address: str):
         await trainer.enable_indoor_bike_data_notify()
 
         cycle_start_time = asyncio.get_event_loop().time()
-        await trainer.set_target_power(TARGET_POWER_WATTS)
+        await trainer.set_target_power(power_adjustment.target(TARGET_POWER_WATTS))
         print(f"Pyramid mode: LOW {LOW_POWER_WATTS} W → HIGH {HIGH_POWER_WATTS} W → LOW {LOW_POWER_WATTS} W")
         print(f"Cycle duration: {CYCLE_DURATION} seconds (ramp up {RAMP_UP_DURATION}s, ramp down {RAMP_DOWN_DURATION}s)")
         print(f"Key mapping: cadence > {Boost_CADENCE_THRESHOLD} RPM -> 'A' + 'Up', \n cadence > {Upper_CADENCE_THRESHOLD} RPM -> 'A', \n cadence < {Lower_CADENCE_THRESHOLD} RPM -> 'B'")
@@ -305,7 +310,7 @@ async def run(address: str):
             while True:
                 await _ensure_cadence_sensor_connected()
                 await update_pyramid_power()
-                await trainer.set_target_power(TARGET_POWER_WATTS)
+                await trainer.set_target_power(power_adjustment.target(TARGET_POWER_WATTS))
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
             print("Stopping ERG session…")

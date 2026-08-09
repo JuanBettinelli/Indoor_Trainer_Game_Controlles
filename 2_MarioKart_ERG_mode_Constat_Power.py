@@ -5,6 +5,7 @@ from pynput.keyboard import Controller, Key
 from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
+from erg_power_adjustment import ErgPowerAdjustment
 from overlay_udp import OverlayClient, OverlayConfig
 from runtime_devices import CADENCE_SENSOR_ADDRESS, INDOOR_TRAINER_ADDRESS
 from zwift_play_to_keyboard import run_zwift_play_mapper_forever
@@ -79,6 +80,7 @@ def get_target_power_with_timeout(timeout=10, default=160):
 
 
 TARGET_POWER_WATTS = get_target_power_with_timeout()
+power_adjustment = ErgPowerAdjustment()
 Upper_CADENCE_THRESHOLD = 65.0
 Lower_CADENCE_THRESHOLD = 30.0
 Boost_CADENCE_THRESHOLD = 100.0
@@ -181,7 +183,7 @@ def log_bike_data(data):
         cadence_str = f"Cadence: {cadence:.1f} RPM"
 
     print(
-        f"ERG target {TARGET_POWER_WATTS} W | "
+        f"ERG target {power_adjustment.target(TARGET_POWER_WATTS)} W | "
         f"Power: {power} W | "
         f"{cadence_str} | "
         f"Speed: {speed:.1f} km/h | "
@@ -198,7 +200,10 @@ async def run(address: str):
         zwift_task = None
         if ENABLE_ZWIFT_PLAY_CONTROLLERS:
             zwift_task = asyncio.create_task(
-                run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
+                run_zwift_play_mapper_forever(
+                    rescan_interval_seconds=5.0,
+                    on_click_power_delta=lambda direction: power_adjustment.change(direction, TARGET_POWER_WATTS),
+                ),
                 name="zwift-play-mapper",
             )
             print("Zwift Play mapper started (integrated).")
@@ -251,14 +256,19 @@ async def run(address: str):
         trainer.set_indoor_bike_data_handler(log_bike_data)
         await trainer.enable_indoor_bike_data_notify()
 
-        await trainer.set_target_power(TARGET_POWER_WATTS)
-        print(f"Set ERG mode to {TARGET_POWER_WATTS} W. Start pedaling.")
+        last_erg_target = power_adjustment.target(TARGET_POWER_WATTS)
+        await trainer.set_target_power(last_erg_target)
+        print(f"Set ERG mode to {last_erg_target} W. Start pedaling.")
         print(f"Key mapping: cadence > {Boost_CADENCE_THRESHOLD} RPM -> 'A' + 'Up', \n cadence > {Upper_CADENCE_THRESHOLD} RPM -> 'A', \n cadence < {Lower_CADENCE_THRESHOLD} RPM -> 'B'")
 
         try:
             while True:
                 await _ensure_cadence_sensor_connected()
-                await asyncio.sleep(1)
+                current_erg_target = power_adjustment.target(TARGET_POWER_WATTS)
+                if current_erg_target != last_erg_target:
+                    await trainer.set_target_power(current_erg_target)
+                    last_erg_target = current_erg_target
+                await asyncio.sleep(0.25)
         except KeyboardInterrupt:
             print("Stopping ERG session…")
         finally:
