@@ -91,11 +91,33 @@ Intervals.icu workouts in ERG mode (script 9)
 	•	Supported steps: timed fixed watts, timed FTP percentages, power ranges, linear ramps, cadence targets, repetitions, and `freeride`.
 	•	Heart-rate-only, pace-only, zone-only, and distance-based steps are rejected because they cannot be converted safely into an ERG target.
 	•	`freeride` resets trainer control for that step and restores ERG control at the next power-controlled step. This is suitable for a 20-minute FTP test.
+	•	During the workout, script 9 records the indoor trainer, power meter, cadence sensor, speed sensor, and heart-rate monitor configured in `devices.json`.
+	•	The finished ride is saved as a standard FIT activity in `recordings/YYYY-MM-DD/`. A matching `.raw.jsonl` sidecar preserves the complete Bluetooth measurements, including fields that FIT or Intervals.icu cannot represent.
+	•	For FIT power and cadence, the power meter has priority. Separate cadence and speed sensors are used next, with the trainer as fallback. Heart rate comes from the configured heart-rate monitor.
+	•	After the ride, the script asks before uploading the FIT activity to Intervals.icu. The planned workout is normally paired by its time and date.
 
 Preview and start today's cycling workout:
 
 ```sh
 python 9_MarioKart_Intervals_Workout.py --date today --ftp 280
+```
+
+Start without confirmation and upload automatically when the workout finishes:
+
+```sh
+python 9_MarioKart_Intervals_Workout.py --date today --ftp 280 --yes
+```
+
+Record locally without uploading:
+
+```sh
+python 9_MarioKart_Intervals_Workout.py --date today --ftp 280 --no-upload
+```
+
+The speed-sensor distance uses a 2105 mm wheel circumference by default. Override it when needed:
+
+```sh
+python 9_MarioKart_Intervals_Workout.py --wheel-circumference-mm 2130
 ```
 
 Run a hardware-free, accelerated simulation first:

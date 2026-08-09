@@ -14,6 +14,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -214,6 +215,50 @@ def api_request(path: str) -> Any:
         raise WorkoutError(f"Intervals.icu returned HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise WorkoutError(f"Could not reach Intervals.icu: {exc.reason}") from exc
+
+
+def upload_activity_file(file_path: Path, *, name: str, description: str = "", external_id: str = "") -> Any:
+    """Upload a completed FIT/TCX/GPX activity using Intervals.icu multipart API."""
+    if not file_path.exists():
+        raise WorkoutError(f"Activity file not found: {file_path}")
+    boundary = f"----IndoorTrainer{uuid.uuid4().hex}"
+    file_bytes = file_path.read_bytes()
+    parts = [
+        f"--{boundary}\r\n".encode(),
+        (
+            f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).encode(),
+        file_bytes,
+        f"\r\n--{boundary}--\r\n".encode(),
+    ]
+    query_values = {"name": name}
+    if description:
+        query_values["description"] = description
+    if external_id:
+        query_values["external_id"] = external_id
+    query = urllib.parse.urlencode(query_values)
+    token = base64.b64encode(f"API_KEY:{get_api_key()}".encode()).decode("ascii")
+    request = urllib.request.Request(
+        f"{API_BASE}/athlete/0/activities?{query}",
+        data=b"".join(parts),
+        method="POST",
+        headers={
+            "Authorization": f"Basic {token}",
+            "Accept": "application/json",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": "trainer-intervals-erg/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60, context=ssl.create_default_context()) as response:
+            payload = response.read()
+            return json.loads(payload) if payload else {"status": response.status}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise WorkoutError(f"Intervals.icu upload returned HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise WorkoutError(f"Could not upload to Intervals.icu: {exc.reason}") from exc
 
 
 def list_ride_events(date_value: dt.date) -> list[dict[str, Any]]:

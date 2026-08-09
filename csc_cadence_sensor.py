@@ -17,6 +17,12 @@ class CSCCrankSample:
     last_crank_event_time_1_1024s: int
 
 
+@dataclass
+class CSCWheelSample:
+    cumulative_wheel_revolutions: int
+    last_wheel_event_time_1_1024s: int
+
+
 class CSCCadenceCalculator:
     """Calculate cadence (RPM) from Cycling Speed & Cadence (CSC) crank data.
 
@@ -91,35 +97,35 @@ def parse_csc_measurement(payload: bytes) -> Tuple[Optional[CSCCrankSample], boo
             bit 1: Crank Revolution Data Present
     """
 
+    crank_sample, wheel_sample = parse_csc_measurement_full(payload)
+    return crank_sample, wheel_sample is not None, crank_sample is not None
+
+
+def parse_csc_measurement_full(payload: bytes) -> tuple[Optional[CSCCrankSample], Optional[CSCWheelSample]]:
+    """Parse and return both crank and wheel revolution samples."""
     if not payload:
-        return None, False, False
+        return None, None
 
     flags = payload[0]
     wheel_present = bool(flags & 0x01)
     crank_present = bool(flags & 0x02)
-
     idx = 1
-
+    wheel_sample: Optional[CSCWheelSample] = None
     if wheel_present:
-        if len(payload) < idx + 4 + 2:
-            return None, wheel_present, crank_present
-        cumulative_wheel_revs = int.from_bytes(payload[idx : idx + 4], byteorder="little", signed=False)
-        idx += 4
-        last_wheel_time = int.from_bytes(payload[idx : idx + 2], byteorder="little", signed=False)
-        idx += 2
-        _ = (cumulative_wheel_revs, last_wheel_time)  # parsed but not used for cadence
+        if len(payload) < idx + 6:
+            return None, None
+        wheel_sample = CSCWheelSample(
+            cumulative_wheel_revolutions=int.from_bytes(payload[idx : idx + 4], "little"),
+            last_wheel_event_time_1_1024s=int.from_bytes(payload[idx + 4 : idx + 6], "little"),
+        )
+        idx += 6
 
     crank_sample: Optional[CSCCrankSample] = None
     if crank_present:
-        if len(payload) < idx + 2 + 2:
-            return None, wheel_present, crank_present
-        cumulative_crank_revs = int.from_bytes(payload[idx : idx + 2], byteorder="little", signed=False)
-        idx += 2
-        last_crank_time = int.from_bytes(payload[idx : idx + 2], byteorder="little", signed=False)
-        idx += 2
+        if len(payload) < idx + 4:
+            return None, wheel_sample
         crank_sample = CSCCrankSample(
-            cumulative_crank_revolutions=cumulative_crank_revs,
-            last_crank_event_time_1_1024s=last_crank_time,
+            cumulative_crank_revolutions=int.from_bytes(payload[idx : idx + 2], "little"),
+            last_crank_event_time_1_1024s=int.from_bytes(payload[idx + 2 : idx + 4], "little"),
         )
-
-    return crank_sample, wheel_present, crank_present
+    return crank_sample, wheel_sample

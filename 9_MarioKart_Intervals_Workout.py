@@ -14,7 +14,7 @@ from bleak import BleakClient
 from pynput.keyboard import Controller, Key
 from pycycling.fitness_machine_service import FitnessMachineService
 
-from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
+from activity_recording import WorkoutRecorder
 from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, load_device_config
 from erg_power_adjustment import ErgPowerAdjustment
 from erg_workout_runner import WorkoutTimeline, format_seconds, interval_countdown_cues, workout_preview
@@ -23,20 +23,18 @@ from intervals_workout import (
     WorkoutError,
     list_ride_events,
     load_workouts_from_plan,
+    upload_activity_file,
     workout_from_event,
 )
 from overlay_udp import OverlayClient, OverlayConfig
 from runtime_devices import LEGACY_CADENCE_SENSOR_ADDRESS, LEGACY_INDOOR_TRAINER_ADDRESS
+from workout_sensors import WorkoutSensorHub
 from zwift_play_to_keyboard import ZwiftHapticHub, run_zwift_play_mapper_forever
 
 
 DEVICE_ADDRESS = LEGACY_INDOOR_TRAINER_ADDRESS
 ENABLE_ZWIFT_PLAY_CONTROLLERS = True
-USE_EXTERNAL_CADENCE_SENSOR = True
 CADENCE_SENSOR_ADDRESS = LEGACY_CADENCE_SENSOR_ADDRESS
-CADENCE_SENSOR_STALE_SECONDS = 3.0
-CADENCE_SENSOR_RECONNECT_INTERVAL_SECONDS = 5.0
-TRAINER_ZERO_CADENCE_POWER_WATTS = 5.0
 ENABLE_CADENCE_OVERLAY = False
 OVERLAY_AUTOSTART = True
 OVERLAY_PORT = 49555
@@ -47,7 +45,6 @@ BOOST_CADENCE_THRESHOLD = 100.0
 
 keyboard = Controller()
 current_keys_pressed: set[object] = set()
-cadence_calculator = CSCCadenceCalculator(stale_seconds=CADENCE_SENSOR_STALE_SECONDS)
 overlay = OverlayClient(
     OverlayConfig(
         enabled=ENABLE_CADENCE_OVERLAY,
@@ -166,12 +163,13 @@ async def simulate(timeline: WorkoutTimeline, speed: float) -> None:
 async def run_trainer(
     timeline: WorkoutTimeline,
     address: str,
-    cadence_address: str | None,
+    sensor_addresses: dict[str, str | None],
     controller_addresses: list[tuple[str, str]] | None,
-) -> None:
-    latest = {"power": 0.0, "cadence": 0.0, "speed": 0.0, "source": "Trainer"}
-    start_time = time.monotonic()
+    recorder: WorkoutRecorder,
+    wheel_circumference_m: float,
+) -> Path:
     last_log = 0.0
+    fit_path: Path | None = None
     power_adjustment = ErgPowerAdjustment(maximum_watts=timeline.max_watts)
     current_base_target: dict[str, int | None] = {"watts": None}
 
@@ -184,6 +182,10 @@ async def run_trainer(
 
     async with BleakClient(address) as trainer_client:
         trainer = FitnessMachineService(trainer_client)
+        sensor_hub = WorkoutSensorHub(
+            wheel_circumference_m=wheel_circumference_m,
+            raw_callback=recorder.raw_event,
+        )
         haptic_hub = ZwiftHapticHub()
         haptic_tasks: set[asyncio.Task] = set()
 
@@ -231,68 +233,26 @@ async def run_trainer(
             if zwift_tasks:
                 print(f"Zwift controller mapper started for {len(zwift_tasks)} controller task(s).")
 
-        cadence_client = None
-        cadence_notify_active = False
-        last_reconnect_attempt = 0.0
-
-        def on_csc(_sender: int, payload: bytearray) -> None:
-            crank_sample, _, _ = parse_csc_measurement(bytes(payload))
-            if crank_sample is not None:
-                cadence_calculator.update_from_crank_sample(crank_sample)
-
-        async def ensure_cadence_sensor() -> None:
-            nonlocal cadence_client, cadence_notify_active, last_reconnect_attempt
-            if not USE_EXTERNAL_CADENCE_SENSOR or not cadence_address:
-                return
-            now = asyncio.get_event_loop().time()
-            if cadence_client is not None and cadence_client.is_connected and cadence_notify_active:
-                return
-            if now - last_reconnect_attempt < CADENCE_SENSOR_RECONNECT_INTERVAL_SECONDS:
-                return
-            last_reconnect_attempt = now
-            try:
-                if cadence_client is None:
-                    cadence_client = BleakClient(cadence_address)
-                if not cadence_client.is_connected:
-                    await cadence_client.connect()
-                    cadence_notify_active = False
-                if not cadence_notify_active:
-                    await cadence_client.start_notify(CSC_MEASUREMENT_UUID, on_csc)
-                    cadence_notify_active = True
-                    print("External cadence sensor connected.")
-            except Exception:
-                cadence_notify_active = False
-                try:
-                    if cadence_client is not None:
-                        await cadence_client.disconnect()
-                except Exception:
-                    pass
-
         def on_bike_data(data) -> None:
-            power = float(data.instant_power or 0)
-            trainer_cadence = float(data.instant_cadence or 0)
-            if power <= TRAINER_ZERO_CADENCE_POWER_WATTS:
-                trainer_cadence = 0
-            if USE_EXTERNAL_CADENCE_SENSOR and cadence_address and cadence_calculator.is_fresh:
-                cadence = cadence_calculator.cadence_rpm_last
-                source = "Garmin"
-            else:
-                cadence = trainer_cadence
-                source = "Trainer"
-            latest.update(power=power, cadence=cadence, speed=float(data.instant_speed or 0), source=source)
-            overlay.send(cadence, source)
-            apply_game_key_mapping(cadence)
+            sensor_hub.update_trainer(data)
 
         trainer.set_indoor_bike_data_handler(on_bike_data)
         await trainer.enable_indoor_bike_data_notify()
+        sensor_hub.start(
+            power_meter=sensor_addresses.get("power_meter"),
+            cadence_sensor=sensor_addresses.get("cadence_sensor"),
+            speed_sensor=sensor_addresses.get("speed_sensor"),
+            heart_rate_sensor=sensor_addresses.get("heart_rate_sensor"),
+        )
 
         last_target: int | None | object = object()
         last_step = -1
         previous_remaining: float | None = None
         erg_active = False
+        start_time = time.monotonic()
+        next_sample = 0.0
         try:
             while True:
-                await ensure_cadence_sensor()
                 elapsed = time.monotonic() - start_time
                 state = timeline.state_at(elapsed)
                 current_base_target["watts"] = state.target_watts
@@ -328,6 +288,24 @@ async def run_trainer(
                     last_target = adjusted_target
 
                 now = time.monotonic()
+                snapshot = sensor_hub.snapshot()
+                cadence = float(snapshot.get("cadence") or 0)
+                cadence_source = (
+                    "Power meter" if snapshot.get("power_meter_cadence") is not None
+                    else "Cadence sensor" if snapshot.get("cadence_sensor_cadence") is not None
+                    else "Trainer"
+                )
+                overlay.send(cadence, cadence_source)
+                apply_game_key_mapping(cadence)
+                if elapsed >= next_sample:
+                    recorder.sample(
+                        elapsed,
+                        state.step_index,
+                        state.step.name,
+                        power_adjustment.target(state.target_watts) if state.target_watts is not None else None,
+                        snapshot,
+                    )
+                    next_sample += 1.0
                 if now - last_log >= 1.0:
                     target = "FREE" if state.target_watts is None else f"{power_adjustment.target(state.target_watts):3d} W"
                     cadence_target = ""
@@ -337,8 +315,8 @@ async def run_trainer(
                             cadence_target += f"-{state.step.cadence_max}"
                     print(
                         f"{target} | remaining {format_seconds(state.remaining_in_step)} | "
-                        f"power {latest['power']:.0f} W | cadence {latest['cadence']:.1f} rpm "
-                        f"({latest['source']}){cadence_target}"
+                        f"power {float(snapshot.get('power') or 0):.0f} W | cadence {cadence:.1f} rpm "
+                        f"({cadence_source}) | HR {snapshot.get('heart_rate') or '-'}{cadence_target}"
                     )
                     last_log = now
                 await asyncio.sleep(0.25)
@@ -360,14 +338,13 @@ async def run_trainer(
                 haptic_task.cancel()
             if haptic_tasks:
                 await asyncio.gather(*haptic_tasks, return_exceptions=True)
-            if cadence_client is not None:
-                try:
-                    if cadence_client.is_connected and cadence_notify_active:
-                        await cadence_client.stop_notify(CSC_MEASUREMENT_UUID)
-                    await cadence_client.disconnect()
-                except Exception:
-                    pass
+            await sensor_hub.stop()
             overlay.close()
+            if recorder.samples:
+                fit_path = recorder.finish()
+    if fit_path is None:
+        raise WorkoutError(f"No samples recorded. Raw log: {recorder.raw_path}")
+    return fit_path
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -379,6 +356,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-watts", type=positive_int, default=600, help="Hard safety ceiling (default: 600 W)")
     parser.add_argument("--devices", type=Path, default=DEFAULT_CONFIG_PATH, help="Device configuration JSON")
     parser.add_argument("--trainer", help="Override the configured FTMS trainer address")
+    parser.add_argument("--recordings-dir", type=Path, default=Path(__file__).with_name("recordings"))
+    parser.add_argument("--wheel-circumference-mm", type=positive_int, default=2105)
+    parser.add_argument("--no-upload", action="store_true", help="Save locally without uploading to Intervals.icu")
     parser.add_argument("--simulate", action="store_true", help="Run without Bluetooth hardware")
     parser.add_argument("--simulation-speed", type=float, default=60.0, help="Simulation time multiplier")
     parser.add_argument("--yes", action="store_true", help="Start after preview without asking")
@@ -405,6 +385,12 @@ def main() -> int:
             cadence_address = configured_address(config, "cadence_sensor")
             if cadence_address is None and not config_exists:
                 cadence_address = CADENCE_SENSOR_ADDRESS
+            sensor_addresses = {
+                "power_meter": configured_address(config, "power_meter"),
+                "cadence_sensor": cadence_address,
+                "speed_sensor": configured_address(config, "speed_sensor"),
+                "heart_rate_sensor": configured_address(config, "heart_rate_sensor"),
+            }
             controller_addresses = None
             if config_exists:
                 controller_addresses = [("play", address) for address in configured_addresses(config, "zwift_play")]
@@ -412,10 +398,35 @@ def main() -> int:
                     ("click", address) for address in configured_addresses(config, "zwift_click")
                 )
             print(f"Trainer: {trainer_address}")
-            print(f"Cadence sensor: {cadence_address or 'trainer cadence'}")
+            for sensor_role, sensor_address in sensor_addresses.items():
+                print(f"{sensor_role.replace('_', ' ').title()}: {sensor_address or 'not configured'}")
             if controller_addresses is not None:
                 print(f"Zwift controllers: {len(controller_addresses)} configured")
-            asyncio.run(run_trainer(timeline, trainer_address, cadence_address, controller_addresses))
+            recorder = WorkoutRecorder(workout.name, workout.event_id, args.recordings_dir)
+            fit_path = asyncio.run(
+                run_trainer(
+                    timeline,
+                    trainer_address,
+                    sensor_addresses,
+                    controller_addresses,
+                    recorder,
+                    args.wheel_circumference_mm / 1000.0,
+                )
+            )
+            print(f"\nFIT activity saved: {fit_path}")
+            print(f"Raw sensor data saved: {recorder.raw_path}")
+            should_upload = not args.no_upload and (
+                args.yes or input("Upload completed activity to Intervals.icu? [y/N]: ").strip().lower() in {"y", "yes", "j", "ja"}
+            )
+            if should_upload:
+                result = upload_activity_file(
+                    fit_path,
+                    name=workout.name,
+                    description=f"Recorded by Indoor Trainer Game Controls. Raw archive: {recorder.raw_path.name}",
+                    external_id=fit_path.stem,
+                )
+                activity_id = result.get("id") if isinstance(result, dict) else None
+                print(f"Uploaded to Intervals.icu{f' as {activity_id}' if activity_id else ''}.")
         return 0
     except (WorkoutError, KeyboardInterrupt) as exc:
         print(f"Error: {exc}", file=sys.stderr)

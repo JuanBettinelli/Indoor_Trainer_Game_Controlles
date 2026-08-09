@@ -1,0 +1,4 @@
+bleak
+fit-tool==0.9.16
+pynput
+pycycling
