@@ -15,6 +15,7 @@ from pynput.keyboard import Controller, Key
 from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
+from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, load_device_config
 from erg_workout_runner import WorkoutTimeline, format_seconds, workout_preview
 from intervals_workout import (
     Workout,
@@ -160,7 +161,12 @@ async def simulate(timeline: WorkoutTimeline, speed: float) -> None:
         simulated += delay * speed
 
 
-async def run_trainer(timeline: WorkoutTimeline, address: str) -> None:
+async def run_trainer(
+    timeline: WorkoutTimeline,
+    address: str,
+    cadence_address: str | None,
+    zwift_play_addresses: list[str] | None,
+) -> None:
     latest = {"power": 0.0, "cadence": 0.0, "speed": 0.0, "source": "Trainer"}
     start_time = time.monotonic()
     last_log = 0.0
@@ -171,13 +177,29 @@ async def run_trainer(timeline: WorkoutTimeline, address: str) -> None:
         await trainer.enable_control_point_indicate()
         await trainer.request_control()
 
-        zwift_task = None
+        zwift_tasks: list[asyncio.Task] = []
         if ENABLE_ZWIFT_PLAY_CONTROLLERS:
-            zwift_task = asyncio.create_task(
-                run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
-                name="zwift-play-mapper",
-            )
-            print("Zwift Play mapper started.")
+            if zwift_play_addresses is None:
+                zwift_tasks.append(
+                    asyncio.create_task(
+                        run_zwift_play_mapper_forever(rescan_interval_seconds=5.0),
+                        name="zwift-play-mapper",
+                    )
+                )
+            else:
+                for index, controller_address in enumerate(zwift_play_addresses, 1):
+                    zwift_tasks.append(
+                        asyncio.create_task(
+                            run_zwift_play_mapper_forever(
+                                target_address=controller_address,
+                                max_controllers=1,
+                                rescan_interval_seconds=5.0,
+                            ),
+                            name=f"zwift-play-mapper-{index}",
+                        )
+                    )
+            if zwift_tasks:
+                print(f"Zwift Play mapper started for {len(zwift_tasks)} controller task(s).")
 
         cadence_client = None
         cadence_notify_active = False
@@ -190,7 +212,7 @@ async def run_trainer(timeline: WorkoutTimeline, address: str) -> None:
 
         async def ensure_cadence_sensor() -> None:
             nonlocal cadence_client, cadence_notify_active, last_reconnect_attempt
-            if not USE_EXTERNAL_CADENCE_SENSOR or not CADENCE_SENSOR_ADDRESS.strip():
+            if not USE_EXTERNAL_CADENCE_SENSOR or not cadence_address:
                 return
             now = asyncio.get_event_loop().time()
             if cadence_client is not None and cadence_client.is_connected and cadence_notify_active:
@@ -200,7 +222,7 @@ async def run_trainer(timeline: WorkoutTimeline, address: str) -> None:
             last_reconnect_attempt = now
             try:
                 if cadence_client is None:
-                    cadence_client = BleakClient(CADENCE_SENSOR_ADDRESS.strip())
+                    cadence_client = BleakClient(cadence_address)
                 if not cadence_client.is_connected:
                     await cadence_client.connect()
                     cadence_notify_active = False
@@ -221,7 +243,7 @@ async def run_trainer(timeline: WorkoutTimeline, address: str) -> None:
             trainer_cadence = float(data.instant_cadence or 0)
             if power <= TRAINER_ZERO_CADENCE_POWER_WATTS:
                 trainer_cadence = 0
-            if USE_EXTERNAL_CADENCE_SENSOR and cadence_calculator.is_fresh:
+            if USE_EXTERNAL_CADENCE_SENSOR and cadence_address and cadence_calculator.is_fresh:
                 cadence = cadence_calculator.cadence_rpm_last
                 source = "Garmin"
             else:
@@ -285,8 +307,9 @@ async def run_trainer(timeline: WorkoutTimeline, address: str) -> None:
                 pass
             for key in current_keys_pressed:
                 keyboard.release(key)
-            if zwift_task is not None:
+            for zwift_task in zwift_tasks:
                 zwift_task.cancel()
+            for zwift_task in zwift_tasks:
                 try:
                     await zwift_task
                 except (asyncio.CancelledError, Exception):
@@ -308,7 +331,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--local-plan", type=Path, help="Read workouts from an AI_Coach plan JSON instead of the API")
     parser.add_argument("--ftp", type=positive_int, help="FTP in watts")
     parser.add_argument("--max-watts", type=positive_int, default=600, help="Hard safety ceiling (default: 600 W)")
-    parser.add_argument("--trainer", default=DEVICE_ADDRESS, help="Bluetooth address of the FTMS trainer")
+    parser.add_argument("--devices", type=Path, default=DEFAULT_CONFIG_PATH, help="Device configuration JSON")
+    parser.add_argument("--trainer", help="Override the configured FTMS trainer address")
     parser.add_argument("--simulate", action="store_true", help="Run without Bluetooth hardware")
     parser.add_argument("--simulation-speed", type=float, default=60.0, help="Simulation time multiplier")
     parser.add_argument("--yes", action="store_true", help="Start after preview without asking")
@@ -329,7 +353,18 @@ def main() -> int:
         if args.simulate:
             asyncio.run(simulate(timeline, args.simulation_speed))
         else:
-            asyncio.run(run_trainer(timeline, args.trainer))
+            config_exists = args.devices.exists()
+            config = load_device_config(args.devices)
+            trainer_address = args.trainer or configured_address(config, "indoor_trainer") or DEVICE_ADDRESS
+            cadence_address = configured_address(config, "cadence_sensor")
+            if cadence_address is None and not config_exists:
+                cadence_address = CADENCE_SENSOR_ADDRESS
+            play_addresses = configured_addresses(config, "zwift_play") if config_exists else None
+            print(f"Trainer: {trainer_address}")
+            print(f"Cadence sensor: {cadence_address or 'trainer cadence'}")
+            if play_addresses is not None:
+                print(f"Zwift Play controllers: {len(play_addresses)} configured")
+            asyncio.run(run_trainer(timeline, trainer_address, cadence_address, play_addresses))
         return 0
     except (WorkoutError, KeyboardInterrupt) as exc:
         print(f"Error: {exc}", file=sys.stderr)

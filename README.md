@@ -26,6 +26,27 @@ and press Enter.
 
 ⸻
 
+Bluetooth device setup
+	•	Run `0_Setup_Devices.py` to scan for and assign devices once.
+	•	The setup supports an indoor trainer, power meter, cadence sensor, heart-rate sensor, Zwift Play controllers, and Zwift Click controllers.
+	•	Detected service UUIDs and device names are used to mark likely candidates, but you always make the final selection.
+	•	Selections are stored in the local `devices.json`. This file is intentionally excluded from Git because Bluetooth addresses are computer-specific.
+	•	Run the setup again at any time to replace, add, or clear devices. Press Enter for a role to keep its current setting and enter `-` to clear it.
+
+```sh
+python 0_Setup_Devices.py
+```
+
+Show the saved configuration without scanning:
+
+```sh
+python 0_Setup_Devices.py --show
+```
+
+`9_MarioKart_Intervals_Workout.py` automatically uses the configured trainer, cadence sensor, and Zwift Play controllers. Power-meter, heart-rate, and Zwift Click selections are stored for upcoming integrations. Command-line options such as `--trainer` can still override the saved trainer.
+
+⸻
+
 Optional: Garmin Cadence Sensor 2 (external cadence)
 	•	If you have a separate cadence sensor (e.g. Garmin Cadence Sensor 2), you can use it as the cadence input instead of the trainer’s cadence.
 	•	In the terminal, run 0_Read_Bluetooth_Devices.py and copy your cadence sensor address (often shows as “Cadence” or “Garmin”).
