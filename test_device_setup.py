@@ -25,6 +25,7 @@ class DeviceSetupTests(unittest.TestCase):
         self.assertIn("indoor_trainer", setup_devices.suggested_roles(trainer))
         self.assertIn("power_meter", setup_devices.suggested_roles(pedals))
         self.assertIn("cadence_sensor", setup_devices.suggested_roles(cadence))
+        self.assertIn("speed_sensor", setup_devices.suggested_roles(cadence))
         self.assertIn("heart_rate_sensor", setup_devices.suggested_roles(hrm))
 
     def test_zwift_name_classification(self):
@@ -51,6 +52,7 @@ class DeviceSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             config = load_device_config(Path(temp) / "missing.json")
         self.assertIsNone(config["devices"]["power_meter"])
+        self.assertIsNone(config["devices"]["speed_sensor"])
         self.assertEqual([], config["devices"]["zwift_click"])
 
     def test_device_can_be_assigned_to_multiple_roles(self):

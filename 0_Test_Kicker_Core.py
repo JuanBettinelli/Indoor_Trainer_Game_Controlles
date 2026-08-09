@@ -2,6 +2,7 @@ import asyncio
 from bleak import BleakClient
 
 from pycycling.fitness_machine_service import FitnessMachineService
+from runtime_devices import INDOOR_TRAINER_ADDRESS
 
 
 async def run(address):
@@ -24,8 +25,7 @@ if __name__ == "__main__":
 
     os.environ["PYTHONASYNCIODEBUG"] = str(1)
 
-    device_address = "D181282F-9CD3-AF69-9E8B-1A8113A614E6"
-    asyncio.run(run(device_address))
+    asyncio.run(run(INDOOR_TRAINER_ADDRESS))
 
 
     # KICKR CORE 5836: D181282F-9CD3-AF69-9E8B-1A8113A614E6

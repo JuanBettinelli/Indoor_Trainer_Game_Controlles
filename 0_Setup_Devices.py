@@ -68,6 +68,8 @@ def suggested_roles(device: ScannedDevice) -> set[str]:
         roles.add("power_meter")
     if CSC_SERVICE in services or "cadence" in name:
         roles.add("cadence_sensor")
+    if CSC_SERVICE in services or "speed sensor" in name or "speed" in name:
+        roles.add("speed_sensor")
     if HEART_RATE_SERVICE in services or any(word in name for word in ("heart rate", "heartrate", "hrm", "polar h", "tickr")):
         roles.add("heart_rate_sensor")
     if "zwift play" in name or (ZWIFT_SERVICE in services and "play" in name):

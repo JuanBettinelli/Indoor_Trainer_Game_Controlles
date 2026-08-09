@@ -44,25 +44,21 @@ Show the saved configuration without scanning:
 python 0_Setup_Devices.py --show
 ```
 
-`9_MarioKart_Intervals_Workout.py` automatically uses the configured trainer, cadence sensor, and Zwift Play controllers. Power-meter, heart-rate, and Zwift Click selections are stored for upcoming integrations. Command-line options such as `--trainer` can still override the saved trainer.
+All runnable scripts now read their relevant devices from `devices.json`. This includes the indoor trainer, cadence sensor, and saved Zwift Play controllers. Power meter, speed sensor, heart-rate sensor, and Zwift Click can also be assigned in setup and are stored for integrations that consume those data streams. Command-line options such as `--trainer` can still override a saved device where supported.
 
 ⸻
 
 Optional: Garmin Cadence Sensor 2 (external cadence)
 	•	If you have a separate cadence sensor (e.g. Garmin Cadence Sensor 2), you can use it as the cadence input instead of the trainer’s cadence.
-	•	In the terminal, run 0_Read_Bluetooth_Devices.py and copy your cadence sensor address (often shows as “Cadence” or “Garmin”).
-	•	Open the script you use (2–7) and set:
-		•	USE_EXTERNAL_CADENCE_SENSOR = True
-		•	CADENCE_SENSOR_ADDRESS = "<paste address here>"
+	•	Run `python 0_Setup_Devices.py`, select the sensor, and assign it as `Cadence sensor`.
+	•	The workout scripts use the saved address automatically when `USE_EXTERNAL_CADENCE_SENSOR = True`.
 	•	Run the script normally. If the cadence sensor can’t connect, it will fall back to trainer cadence.
 
 ⸻
 
 Trainer setup
-	•	In the terminal, type python  (with a trailing space), then drag the file 0_Read_Bluetooth_Devices.py into the terminal and press Enter.
-	•	The terminal should display output. Copy the device address (the long number after Wahoo, Tacx, etc., e.g.
-DEVICE_ADDRESS = "D181282F-9CD3-AF69-9E8B-1A8113A614E6").
-	•	Open the file 2_MarioKart_ERG_mode_Constat_Power.py with Notepad, VS Code, Python Launcher, etc., and replace the device address on line 7 with the copied address. Save and close the file.
+	•	Run `python 0_Setup_Devices.py`, select your smart trainer, and assign it as `Indoor trainer`.
+	•	The trainer scripts use the saved address automatically; no source-code edit is needed.
 	•	Open a new terminal (Windows: cmd) and again type python  (with a trailing space), then drag 2_MarioKart_ERG_mode_Constat_Power.py into the terminal and press Enter.
 	•	Enter the watts you want to ride. If nothing is entered, the default is 160 W.
 	•	Click on the Mario Kart window. Pedaling should now control the throttle.

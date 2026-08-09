@@ -5,6 +5,7 @@
     "indoor_trainer": null,
     "power_meter": null,
     "cadence_sensor": null,
+    "speed_sensor": null,
     "heart_rate_sensor": null,
     "zwift_play": [],
     "zwift_click": []

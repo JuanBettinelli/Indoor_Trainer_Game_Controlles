@@ -23,6 +23,8 @@ from typing import Dict, Tuple, List, Optional
 
 from bleak import BleakClient, BleakScanner
 
+from runtime_devices import addresses_for
+
 # Zwift UUIDs extracted from swiftcontrol (BikeControl)
 ZWIFT_CUSTOM_SERVICE_UUID = "00000001-19CA-4651-86E5-FA29DCDD09D1"
 ZWIFT_ASYNC_CHARACTERISTIC_UUID = "00000002-19CA-4651-86E5-FA29DCDD09D1"  # notify
@@ -41,6 +43,7 @@ RESPONSE_START_PLAY = bytes([0x01, 0x04])
 # Discovery parameters
 TARGET_NAME_SUBSTR = "Zwift"   # picks all with this in name by default
 TARGET_ADDRESS: Optional[str] = None  # e.g., "AA:BB:CC:DD:EE:FF" or macOS UUID
+CONFIGURED_TARGET_ADDRESSES = addresses_for("zwift_play")
 SCAN_TIMEOUT = 6.0
 RUN_SECONDS = 90
 MAX_CONTROLLERS = 2  # Set to higher number to support more
@@ -151,6 +154,9 @@ async def find_devices() -> List[object]:
             matches.append(match)
         else:
             print(f"No device at address {TARGET_ADDRESS}")
+    elif CONFIGURED_TARGET_ADDRESSES is not None:
+        configured = set(CONFIGURED_TARGET_ADDRESSES)
+        matches = [d for d in devices if d.address in configured]
     else:
         # All matching the name substring
         matches = [d for d in devices if d.name and TARGET_NAME_SUBSTR.lower() in d.name.lower()]
@@ -284,6 +290,7 @@ if __name__ == "__main__":
         if sys.argv[1] == "--name" and len(sys.argv) > 2:
             TARGET_NAME_SUBSTR = sys.argv[2]
             TARGET_ADDRESS = None
+            CONFIGURED_TARGET_ADDRESSES = None
             print(f"Using name filter: {TARGET_NAME_SUBSTR}")
         else:
             TARGET_ADDRESS = sys.argv[1]

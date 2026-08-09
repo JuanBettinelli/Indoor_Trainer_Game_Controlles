@@ -17,10 +17,13 @@ Tips:
 import asyncio
 from bleak import BleakClient, BleakScanner
 
+from runtime_devices import addresses_for
+
 TARGET_NAME = "Zwift"  # substring match; adjust if needed
 # Optional: pin to a specific address to target left/right controller explicitly
 # Example: TARGET_ADDRESS = "ABA8A512-21BB-6C25-1BC6-F9A03A4D68BC"
-TARGET_ADDRESS = "E266B97E-3F81-9B82-20D6-CF3E4C2C7618" # "ABA8A512-21BB-6C25-1BC6-F9A03A4D68BC" # E266B97E-3F81-9B82-20D6-CF3E4C2C7618
+_configured_controllers = (addresses_for("zwift_play") or []) + (addresses_for("zwift_click") or [])
+TARGET_ADDRESS = _configured_controllers[0] if _configured_controllers else None
 RUN_SECONDS = 90        # how long to listen for notifications
 
 

@@ -21,6 +21,8 @@ from typing import Dict, Tuple, List, Optional, Set, Any
 from bleak import BleakClient, BleakScanner
 from pynput.keyboard import Controller, Key
 
+from runtime_devices import addresses_for
+
 # Zwift UUIDs extracted from swiftcontrol (BikeControl)
 ZWIFT_CUSTOM_SERVICE_UUID = "00000001-19CA-4651-86E5-FA29DCDD09D1"
 ZWIFT_ASYNC_CHARACTERISTIC_UUID = "00000002-19CA-4651-86E5-FA29DCDD09D1"  # notify
@@ -399,14 +401,33 @@ async def run_zwift_play_mapper_forever(
     """Continuously scan/connect so you can run this in the background."""
     while True:
         try:
-            await start_controller_mapper(
-                target_name_substr=target_name_substr,
-                target_address=target_address,
-                scan_timeout=scan_timeout,
-                max_controllers=max_controllers,
-                key_mapping_left=key_mapping_left,
-                key_mapping_right=key_mapping_right,
-            )
+            configured_targets = addresses_for("zwift_play") if target_address is None else None
+            if configured_targets is None:
+                await start_controller_mapper(
+                    target_name_substr=target_name_substr,
+                    target_address=target_address,
+                    scan_timeout=scan_timeout,
+                    max_controllers=max_controllers,
+                    key_mapping_left=key_mapping_left,
+                    key_mapping_right=key_mapping_right,
+                )
+            elif configured_targets:
+                await asyncio.gather(
+                    *(
+                        start_controller_mapper(
+                            target_name_substr=target_name_substr,
+                            target_address=address,
+                            scan_timeout=scan_timeout,
+                            max_controllers=1,
+                            key_mapping_left=key_mapping_left,
+                            key_mapping_right=key_mapping_right,
+                        )
+                        for address in configured_targets
+                    ),
+                    return_exceptions=True,
+                )
+            else:
+                print("No Zwift Play controllers configured in devices.json.")
         except asyncio.CancelledError:
             raise
         except Exception as e:

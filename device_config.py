@@ -14,6 +14,7 @@ SINGLE_DEVICE_ROLES = (
     "indoor_trainer",
     "power_meter",
     "cadence_sensor",
+    "speed_sensor",
     "heart_rate_sensor",
 )
 MULTI_DEVICE_ROLES = ("zwift_play", "zwift_click")
@@ -23,6 +24,7 @@ ROLE_LABELS = {
     "indoor_trainer": "Indoor trainer",
     "power_meter": "Power meter",
     "cadence_sensor": "Cadence sensor",
+    "speed_sensor": "Speed sensor",
     "heart_rate_sensor": "Heart-rate sensor",
     "zwift_play": "Zwift Play controller(s)",
     "zwift_click": "Zwift Click controller(s)",
@@ -78,4 +80,3 @@ def configured_address(config: dict[str, Any], role: str) -> str | None:
 
 def configured_addresses(config: dict[str, Any], role: str) -> list[str]:
     return [str(item["address"]) for item in configured_devices(config, role) if item.get("address")]
-

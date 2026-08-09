@@ -5,9 +5,10 @@ from pycycling.fitness_machine_service import FitnessMachineService
 
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
 from overlay_udp import OverlayClient, OverlayConfig
+from runtime_devices import CADENCE_SENSOR_ADDRESS, INDOOR_TRAINER_ADDRESS
 from zwift_play_to_keyboard import run_zwift_play_mapper_forever
 
-DEVICE_ADDRESS = "D181282F-9CD3-AF69-9E8B-1A8113A614E6"
+DEVICE_ADDRESS = INDOOR_TRAINER_ADDRESS
 
 # Optional: Run Zwift Play controller mapping inside this script (so you only run one script).
 ENABLE_ZWIFT_PLAY_CONTROLLERS = True
@@ -23,7 +24,6 @@ Boost_CADENCE_THRESHOLD = 100.0
 
 # Optional: Use an external cadence sensor (e.g., Garmin Cadence Sensor 2) instead of trainer cadence.
 USE_EXTERNAL_CADENCE_SENSOR = True
-CADENCE_SENSOR_ADDRESS = "5AAA25D1-0D9E-C93A-F661-6AC44233763A"
 CADENCE_SENSOR_STALE_SECONDS = 3.0
 CADENCE_SENSOR_RECONNECT_INTERVAL_SECONDS = 5.0
 
