@@ -177,9 +177,11 @@ async def run_trainer(
 
     def on_finish_key(key) -> bool | None:
         nonlocal finish_requested
-        if key == Key.f12 and not finish_requested:
+        character = getattr(key, "char", None)
+        is_quit_key = key == Key.f12 or (isinstance(character, str) and character.lower() == "q")
+        if is_quit_key and not finish_requested:
             finish_requested = True
-            print("\nF12 pressed: finishing and saving the workout ...")
+            print("\nFinish key pressed: finishing and saving the workout ...")
         return None
 
     finish_listener = Listener(on_press=on_finish_key)
@@ -263,7 +265,7 @@ async def run_trainer(
         start_time = time.monotonic()
         next_sample = 0.0
         finish_listener.start()
-        print("Press F12 at any time to finish early and save the workout.")
+        print("Press Q at any time to finish early and save the workout (F12 also works).")
         try:
             while True:
                 elapsed = time.monotonic() - start_time
