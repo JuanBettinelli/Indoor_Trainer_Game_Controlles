@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "mappings": {
+    "zwift_play_left": {
+      "Y": "up",
+      "Z": "left",
+      "A": "right",
+      "B": "down",
+      "Side": "q",
+      "On/Off": "escape",
+      "right_paddle": "left",
+      "left_paddle": "left"
+    },
+    "zwift_play_right": {
+      "Y": "x",
+      "Z": "y",
+      "A": "a",
+      "B": "b",
+      "Side": "e",
+      "On/Off": "enter",
+      "right_paddle": "right",
+      "left_paddle": "right"
+    },
+    "zwift_click": {
+      "Plus": "right",
+      "Minus": "left"
+    }
+  }
+}

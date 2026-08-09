@@ -6,3 +6,4 @@ venv/
 .env
 .env.*
 devices.json
+controller_mapping.json

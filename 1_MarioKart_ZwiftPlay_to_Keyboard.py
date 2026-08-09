@@ -4,6 +4,7 @@ if __name__ == "__main__":
     from zwift_play_to_keyboard import (
         KEY_MAPPING_LEFT,
         KEY_MAPPING_RIGHT,
+        KEY_MAPPING_CLICK,
         run_zwift_play_mapper_forever,
     )
 
@@ -31,6 +32,11 @@ if __name__ == "__main__":
     print("KEY MAPPING - RIGHT CONTROLLER:")
     print("=" * 60)
     for button, key in KEY_MAPPING_RIGHT.items():
+        print(f"  {button:20} → {key}")
+    print("\n" + "=" * 60)
+    print("KEY MAPPING - ZWIFT CLICK:")
+    print("=" * 60)
+    for button, key in KEY_MAPPING_CLICK.items():
         print(f"  {button:20} → {key}")
     print("=" * 60 + "\n")
 

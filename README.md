@@ -44,7 +44,15 @@ Show the saved configuration without scanning:
 python 0_Setup_Devices.py --show
 ```
 
-All runnable scripts now read their relevant devices from `devices.json`. This includes the indoor trainer, cadence sensor, and saved Zwift Play controllers. Power meter, speed sensor, heart-rate sensor, and Zwift Click can also be assigned in setup and are stored for integrations that consume those data streams. Command-line options such as `--trainer` can still override a saved device where supported.
+All runnable scripts now read their relevant devices from `devices.json`. This includes the indoor trainer, cadence sensor, saved Zwift Play controllers, and Zwift Click. Power meter, speed sensor, and heart-rate sensor can also be assigned for integrations that consume those data streams. Command-line options such as `--trainer` can still override a saved device where supported.
+
+Configure controller buttons separately:
+
+```sh
+python 0_Setup_Controllers.py
+```
+
+This creates the local `controller_mapping.json`. You can configure the left and right Zwift Play mappings and the Zwift Click Plus/Minus mappings. Enter `-` for a button to disable it. All integrated controller scripts load this file automatically. To inspect the current mapping without changing it, run `python 0_Setup_Controllers.py --show`.
 
 ⸻
 
@@ -125,7 +133,7 @@ Optional: On-screen cadence overlay (always on top)
 
 ⸻
 
-Button layout (editable in the scripts)
+Default button layout (editable with `0_Setup_Controllers.py`)
 KEY_MAPPING_LEFT = {
     "Y": "up",                   # Up button -> Up arrow
     "Z": "left",                 # Left button -> Left arrow

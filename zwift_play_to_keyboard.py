@@ -21,6 +21,7 @@ from typing import Dict, Tuple, List, Optional, Set, Any
 from bleak import BleakClient, BleakScanner
 from pynput.keyboard import Controller, Key
 
+from controller_config import mappings as load_controller_mappings
 from runtime_devices import addresses_for
 
 # Zwift UUIDs extracted from swiftcontrol (BikeControl)
@@ -31,6 +32,7 @@ ZWIFT_SYNC_TX_CHARACTERISTIC_UUID = "00000004-19CA-4651-86E5-FA29DCDD09D1"  # in
 
 # Message types (per swiftcontrol constants)
 PLAY_NOTIFICATION_MESSAGE_TYPE = 0x07
+CLICK_NOTIFICATION_MESSAGE_TYPE = 0x37
 BATTERY_LEVEL_TYPE = 0x19
 
 # Handshake bytes (per swiftcontrol constants)
@@ -50,30 +52,8 @@ FIELD_ANALOG_LR = 8  # signed varint (zigzag)
 ON = 0
 OFF = 1
 
-# ============================================================================
-# DEFAULT MAPPINGS (same as original script)
-# ============================================================================
-KEY_MAPPING_LEFT = {
-    "Y": "up",
-    "Z": "left",
-    "A": "right",
-    "B": "down",
-    "Side": "q",
-    "On/Off": "escape",
-    "right_paddle": "left",
-    "left_paddle": "left",
-}
-
-KEY_MAPPING_RIGHT = {
-    "Y": "x",
-    "Z": "y",
-    "A": "a",
-    "B": "b",
-    "Side": "e",
-    "On/Off": "enter",
-    "right_paddle": "right",
-    "left_paddle": "right",
-}
+# Loaded from controller_mapping.json, with built-in defaults before setup is run.
+KEY_MAPPING_LEFT, KEY_MAPPING_RIGHT, KEY_MAPPING_CLICK = load_controller_mappings()
 
 # Global keyboard controller
 keyboard = Controller()
@@ -174,12 +154,19 @@ def get_key_object(key_name: str):
     return key_name
 
 
-def get_key_mapping(side: str, key_mapping_left: Dict[str, str], key_mapping_right: Dict[str, str]) -> Dict[str, str]:
+def get_key_mapping(
+    side: str,
+    key_mapping_left: Dict[str, str],
+    key_mapping_right: Dict[str, str],
+    key_mapping_click: Dict[str, str],
+) -> Dict[str, str]:
+    if side == "click":
+        return key_mapping_click
     return key_mapping_left if side == "left" else key_mapping_right
 
 
-def press_key(device_label: str, button_name: str, side: str, key_mapping_left: Dict[str, str], key_mapping_right: Dict[str, str]):
-    mapping = get_key_mapping(side, key_mapping_left, key_mapping_right)
+def press_key(device_label: str, button_name: str, side: str, key_mapping_left: Dict[str, str], key_mapping_right: Dict[str, str], key_mapping_click: Dict[str, str]):
+    mapping = get_key_mapping(side, key_mapping_left, key_mapping_right, key_mapping_click)
     if button_name not in mapping:
         return
 
@@ -191,8 +178,8 @@ def press_key(device_label: str, button_name: str, side: str, key_mapping_left: 
     print(f"{device_label} [{side}] Press: {button_name} → {key_name}")
 
 
-def release_key(device_label: str, button_name: str, side: str, key_mapping_left: Dict[str, str], key_mapping_right: Dict[str, str]):
-    mapping = get_key_mapping(side, key_mapping_left, key_mapping_right)
+def release_key(device_label: str, button_name: str, side: str, key_mapping_left: Dict[str, str], key_mapping_right: Dict[str, str], key_mapping_click: Dict[str, str]):
+    mapping = get_key_mapping(side, key_mapping_left, key_mapping_right, key_mapping_click)
     if button_name not in mapping:
         return
 
@@ -241,8 +228,10 @@ async def find_devices(
 async def connect_to_controller(
     device: object,
     *,
+    controller_type: str,
     key_mapping_left: Dict[str, str],
     key_mapping_right: Dict[str, str],
+    key_mapping_click: Dict[str, str],
 ) -> None:
     """Connect to a controller and map buttons to keyboard."""
     # Include address to avoid collisions when multiple controllers share the same name.
@@ -255,9 +244,9 @@ async def connect_to_controller(
         async with BleakClient(device) as client:
             def _release_all_for_device():
                 for button in list(device_pressed_keys.get(device_label, set())):
-                    for side in ["left", "right"]:
+                    for side in ["left", "right", "click"]:
                         try:
-                            release_key(device_label, button, side, key_mapping_left, key_mapping_right)
+                            release_key(device_label, button, side, key_mapping_left, key_mapping_right, key_mapping_click)
                         except Exception:
                             pass
 
@@ -269,7 +258,24 @@ async def connect_to_controller(
                 msg_type = b[0]
                 payload = b[1:]
 
-                if msg_type == PLAY_NOTIFICATION_MESSAGE_TYPE:
+                if msg_type == CLICK_NOTIFICATION_MESSAGE_TYPE and controller_type == "click":
+                    try:
+                        fields = parse_play_keypad_status(payload)
+                        previous_buttons = device_pressed_keys.get(device_label, set()).copy()
+                        current_buttons = set()
+                        if fields.get(1) == ON:
+                            current_buttons.add("Plus")
+                        if fields.get(2) == ON:
+                            current_buttons.add("Minus")
+                        for button in previous_buttons - current_buttons:
+                            release_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
+                        for button in current_buttons - previous_buttons:
+                            press_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
+                        device_pressed_keys[device_label] = current_buttons
+                    except Exception as e:
+                        print(f"{device_label} Error parsing ClickKeyPadStatus: {e}; raw={payload.hex(' ')}")
+
+                elif msg_type == PLAY_NOTIFICATION_MESSAGE_TYPE and controller_type == "play":
                     try:
                         fields = parse_play_keypad_status(payload)
                         # Persist side per device to avoid side flapping if FIELD_RIGHT_PAD is omitted.
@@ -304,10 +310,10 @@ async def connect_to_controller(
                         previous_buttons = device_pressed_keys.get(device_label, set()).copy()
 
                         for button in previous_buttons - current_buttons:
-                            release_key(device_label, button, side, key_mapping_left, key_mapping_right)
+                            release_key(device_label, button, side, key_mapping_left, key_mapping_right, key_mapping_click)
 
                         for button in current_buttons - previous_buttons:
-                            press_key(device_label, button, side, key_mapping_left, key_mapping_right)
+                            press_key(device_label, button, side, key_mapping_left, key_mapping_right, key_mapping_click)
 
                         device_pressed_keys[device_label] = current_buttons
 
@@ -364,12 +370,15 @@ async def start_controller_mapper(
     target_address: Optional[str] = None,
     scan_timeout: float = 6.0,
     max_controllers: int = 2,
+    controller_type: str = "play",
     key_mapping_left: Optional[Dict[str, str]] = None,
     key_mapping_right: Optional[Dict[str, str]] = None,
+    key_mapping_click: Optional[Dict[str, str]] = None,
 ) -> None:
     """Scan once and connect to discovered controllers (runs until disconnect/cancel)."""
-    key_mapping_left = key_mapping_left or KEY_MAPPING_LEFT
-    key_mapping_right = key_mapping_right or KEY_MAPPING_RIGHT
+    key_mapping_left = KEY_MAPPING_LEFT if key_mapping_left is None else key_mapping_left
+    key_mapping_right = KEY_MAPPING_RIGHT if key_mapping_right is None else key_mapping_right
+    key_mapping_click = KEY_MAPPING_CLICK if key_mapping_click is None else key_mapping_click
 
     devices = await find_devices(
         target_name_substr=target_name_substr,
@@ -381,7 +390,13 @@ async def start_controller_mapper(
         return
 
     tasks = [
-        connect_to_controller(device, key_mapping_left=key_mapping_left, key_mapping_right=key_mapping_right)
+        connect_to_controller(
+            device,
+            controller_type=controller_type,
+            key_mapping_left=key_mapping_left,
+            key_mapping_right=key_mapping_right,
+            key_mapping_click=key_mapping_click,
+        )
         for device in devices
     ]
 
@@ -392,11 +407,13 @@ async def run_zwift_play_mapper_forever(
     *,
     target_name_substr: str = "Zwift",
     target_address: Optional[str] = None,
+    controller_type: Optional[str] = None,
     scan_timeout: float = 6.0,
     max_controllers: int = 2,
     rescan_interval_seconds: float = 5.0,
     key_mapping_left: Optional[Dict[str, str]] = None,
     key_mapping_right: Optional[Dict[str, str]] = None,
+    key_mapping_click: Optional[Dict[str, str]] = None,
 ) -> None:
     """Continuously scan/connect so you can run this in the background."""
     while True:
@@ -408,10 +425,19 @@ async def run_zwift_play_mapper_forever(
                     target_address=target_address,
                     scan_timeout=scan_timeout,
                     max_controllers=max_controllers,
+                    controller_type=controller_type or "play",
                     key_mapping_left=key_mapping_left,
                     key_mapping_right=key_mapping_right,
+                    key_mapping_click=key_mapping_click,
                 )
-            elif configured_targets:
+            else:
+                configured_clicks = addresses_for("zwift_click") or []
+                targets = [("play", address) for address in configured_targets]
+                targets.extend(("click", address) for address in configured_clicks)
+                if not targets:
+                    print("No Zwift Play or Zwift Click controllers configured in devices.json.")
+                    await asyncio.sleep(rescan_interval_seconds)
+                    continue
                 await asyncio.gather(
                     *(
                         start_controller_mapper(
@@ -419,15 +445,15 @@ async def run_zwift_play_mapper_forever(
                             target_address=address,
                             scan_timeout=scan_timeout,
                             max_controllers=1,
+                            controller_type=controller_type,
                             key_mapping_left=key_mapping_left,
                             key_mapping_right=key_mapping_right,
+                            key_mapping_click=key_mapping_click,
                         )
-                        for address in configured_targets
+                        for controller_type, address in targets
                     ),
                     return_exceptions=True,
                 )
-            else:
-                print("No Zwift Play controllers configured in devices.json.")
         except asyncio.CancelledError:
             raise
         except Exception as e:
