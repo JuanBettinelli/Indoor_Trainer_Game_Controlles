@@ -95,6 +95,7 @@ Intervals.icu workouts in ERG mode (script 9)
 	•	The finished ride is saved as a standard FIT activity in `recordings/YYYY-MM-DD/`. A matching `.raw.jsonl` sidecar preserves the complete Bluetooth measurements, including fields that FIT or Intervals.icu cannot represent.
 	•	For FIT power and cadence, the power meter has priority. Separate cadence and speed sensors are used next, with the trainer as fallback. Heart rate comes from the configured heart-rate monitor.
 	•	After the ride, the script asks before uploading the FIT activity to Intervals.icu. The planned workout is normally paired by its time and date.
+	•	Press `F12` during a workout to finish it early. The trainer is released safely, all collected data is written to FIT and raw JSONL files, and the normal upload prompt is shown. On keyboards where F12 controls media, use `Fn` + `F12`.
 
 Preview and start today's cycling workout:
 

@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from bleak import BleakClient
-from pynput.keyboard import Controller, Key
+from pynput.keyboard import Controller, Key, Listener
 from pycycling.fitness_machine_service import FitnessMachineService
 
 from activity_recording import WorkoutRecorder
@@ -167,11 +167,22 @@ async def run_trainer(
     controller_addresses: list[tuple[str, str]] | None,
     recorder: WorkoutRecorder,
     wheel_circumference_m: float,
-) -> Path:
+) -> tuple[Path, bool]:
     last_log = 0.0
     fit_path: Path | None = None
     power_adjustment = ErgPowerAdjustment(maximum_watts=timeline.max_watts)
     current_base_target: dict[str, int | None] = {"watts": None}
+    finish_requested = False
+
+    def on_finish_key(key) -> bool | None:
+        nonlocal finish_requested
+        if key == Key.f12:
+            finish_requested = True
+            print("\nF12 pressed: finishing and saving the workout ...")
+            return False
+        return None
+
+    finish_listener = Listener(on_press=on_finish_key)
 
     def change_erg_target(direction: int) -> bool:
         base_target = current_base_target["watts"]
@@ -251,6 +262,8 @@ async def run_trainer(
         erg_active = False
         start_time = time.monotonic()
         next_sample = 0.0
+        finish_listener.start()
+        print("Press F12 at any time to finish early and save the workout.")
         try:
             while True:
                 elapsed = time.monotonic() - start_time
@@ -258,6 +271,9 @@ async def run_trainer(
                 current_base_target["watts"] = state.target_watts
                 if state.finished:
                     print("\nWorkout complete.")
+                    break
+                if finish_requested:
+                    print("Workout ended early by the user.")
                     break
                 if state.step_index != last_step:
                     print(f"\nStep {state.step_index + 1}/{len(timeline.workout.steps)}: {state.step.name}")
@@ -321,6 +337,7 @@ async def run_trainer(
                     last_log = now
                 await asyncio.sleep(0.25)
         finally:
+            finish_listener.stop()
             try:
                 await trainer.reset()
             except Exception:
@@ -344,7 +361,7 @@ async def run_trainer(
                 fit_path = recorder.finish()
     if fit_path is None:
         raise WorkoutError(f"No samples recorded. Raw log: {recorder.raw_path}")
-    return fit_path
+    return fit_path, finish_requested
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -403,7 +420,7 @@ def main() -> int:
             if controller_addresses is not None:
                 print(f"Zwift controllers: {len(controller_addresses)} configured")
             recorder = WorkoutRecorder(workout.name, workout.event_id, args.recordings_dir)
-            fit_path = asyncio.run(
+            fit_path, ended_early = asyncio.run(
                 run_trainer(
                     timeline,
                     trainer_address,
@@ -422,7 +439,11 @@ def main() -> int:
                 result = upload_activity_file(
                     fit_path,
                     name=workout.name,
-                    description=f"Recorded by Indoor Trainer Game Controls. Raw archive: {recorder.raw_path.name}",
+                    description=(
+                        f"Recorded by Indoor Trainer Game Controls. "
+                        f"{'Workout ended early. ' if ended_early else ''}"
+                        f"Raw archive: {recorder.raw_path.name}"
+                    ),
                     external_id=fit_path.stem,
                 )
                 activity_id = result.get("id") if isinstance(result, dict) else None
