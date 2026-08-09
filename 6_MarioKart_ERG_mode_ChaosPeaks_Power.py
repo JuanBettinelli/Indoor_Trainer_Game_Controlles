@@ -265,7 +265,7 @@ async def run(address: str):
             zwift_task = asyncio.create_task(
                 run_zwift_play_mapper_forever(
                     rescan_interval_seconds=5.0,
-                    on_click_power_delta=lambda direction: power_adjustment.change(direction, TARGET_POWER_WATTS),
+                    on_click_power_delta=lambda direction: power_adjustment.change(direction, TARGET_POWER_WATTS) is not None,
                 ),
                 name="zwift-play-mapper",
             )

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from controller_config import CLICK_BUTTONS, DEFAULT_MAPPINGS, default_config, load_controller_config, mappings
+from controller_config import CLICK_BUTTONS, DEFAULT_MAPPINGS, default_config, load_controller_config, mappings, vibration_enabled
 
 
 class ControllerConfigTests(unittest.TestCase):
@@ -31,7 +31,14 @@ class ControllerConfigTests(unittest.TestCase):
             loaded = load_controller_config(path)
         self.assertEqual(DEFAULT_MAPPINGS["zwift_click"], loaded["mappings"]["zwift_click"])
 
+    def test_vibration_setting_round_trip(self):
+        config = default_config()
+        config["settings"]["vibration_enabled"] = False
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "controller_mapping.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            self.assertFalse(vibration_enabled(path))
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -34,6 +34,7 @@ def show_connected_controllers() -> None:
 
 def show_mappings(config: dict, path: Path) -> None:
     print(f"Controller mapping: {path}\n")
+    print(f"Vibration feedback: {'enabled' if config['settings']['vibration_enabled'] else 'disabled'}\n")
     for profile, label in PROFILE_LABELS.items():
         print(label)
         mapping = config["mappings"][profile]
@@ -75,6 +76,20 @@ def edit_profile(config: dict, profile: str) -> None:
             mapping[button] = answer.lower()
 
 
+def edit_vibration(config: dict) -> None:
+    current = config["settings"]["vibration_enabled"]
+    default = "Y/n" if current else "y/N"
+    answer = input(f"\nEnable Zwift Play vibration feedback? [{default}]: ").strip().lower()
+    if not answer:
+        return
+    if answer in {"y", "yes", "j", "ja"}:
+        config["settings"]["vibration_enabled"] = True
+    elif answer in {"n", "no", "nein"}:
+        config["settings"]["vibration_enabled"] = False
+    else:
+        raise ControllerConfigError("Invalid vibration selection")
+
+
 def atomic_write(path: Path, config: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
@@ -102,6 +117,7 @@ def main() -> int:
         if not args.reset:
             for profile in choose_profiles():
                 edit_profile(config, profile)
+            edit_vibration(config)
         print()
         show_mappings(config, args.output)
         if not args.yes and input("Save these mappings? [y/N]: ").strip().lower() not in {"y", "yes", "j", "ja"}:
@@ -117,4 +133,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

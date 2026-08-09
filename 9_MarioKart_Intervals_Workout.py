@@ -27,7 +27,7 @@ from intervals_workout import (
 )
 from overlay_udp import OverlayClient, OverlayConfig
 from runtime_devices import LEGACY_CADENCE_SENSOR_ADDRESS, LEGACY_INDOOR_TRAINER_ADDRESS
-from zwift_play_to_keyboard import run_zwift_play_mapper_forever
+from zwift_play_to_keyboard import ZwiftHapticHub, run_zwift_play_mapper_forever
 
 
 DEVICE_ADDRESS = LEGACY_INDOOR_TRAINER_ADDRESS
@@ -175,15 +175,16 @@ async def run_trainer(
     power_adjustment = ErgPowerAdjustment(maximum_watts=timeline.max_watts)
     current_base_target: dict[str, int | None] = {"watts": None}
 
-    def change_erg_target(direction: int) -> None:
+    def change_erg_target(direction: int) -> bool:
         base_target = current_base_target["watts"]
         if base_target is None:
             print("Zwift Click ignored: ERG is currently disabled.")
-            return
-        power_adjustment.change(direction, base_target)
+            return False
+        return power_adjustment.change(direction, base_target) is not None
 
     async with BleakClient(address) as trainer_client:
         trainer = FitnessMachineService(trainer_client)
+        haptic_hub = ZwiftHapticHub()
         overlay.start()
         await trainer.enable_control_point_indicate()
         await trainer.request_control()
@@ -196,6 +197,7 @@ async def run_trainer(
                         run_zwift_play_mapper_forever(
                             rescan_interval_seconds=5.0,
                             on_click_power_delta=change_erg_target,
+                            haptic_hub=haptic_hub,
                         ),
                         name="zwift-play-mapper",
                     )
@@ -210,6 +212,7 @@ async def run_trainer(
                                 controller_type=controller_type,
                                 rescan_interval_seconds=5.0,
                                 on_click_power_delta=change_erg_target,
+                                haptic_hub=haptic_hub,
                             ),
                             name=f"zwift-{controller_type}-mapper-{index}",
                         )
@@ -286,6 +289,8 @@ async def run_trainer(
                     break
                 if state.step_index != last_step:
                     print(f"\nStep {state.step_index + 1}/{len(timeline.workout.steps)}: {state.step.name}")
+                    if last_step >= 0:
+                        await haptic_hub.pulse(count=2)
                     last_step = state.step_index
 
                 if state.target_watts is None:

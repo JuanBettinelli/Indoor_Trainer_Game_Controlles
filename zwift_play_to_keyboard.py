@@ -21,7 +21,7 @@ from typing import Dict, Tuple, List, Optional, Set, Any, Callable
 from bleak import BleakClient, BleakScanner
 from pynput.keyboard import Controller, Key
 
-from controller_config import mappings as load_controller_mappings
+from controller_config import mappings as load_controller_mappings, vibration_enabled
 from runtime_devices import addresses_for
 
 # Zwift UUIDs extracted from swiftcontrol (BikeControl)
@@ -37,6 +37,7 @@ BATTERY_LEVEL_TYPE = 0x19
 
 # Handshake bytes (per swiftcontrol constants)
 RIDE_ON = bytes([0x52, 0x69, 0x64, 0x65, 0x4F, 0x6E])  # "RideOn"
+VIBRATE_COMMAND = bytes([0x12, 0x12, 0x08, 0x0A, 0x06, 0x08, 0x02, 0x10, 0x00, 0x18, 0x20])
 
 # PlayKeyPadStatus field numbers (protobuf varint)
 FIELD_RIGHT_PAD = 1  # 0=ON (right), 1=OFF (left)
@@ -54,6 +55,38 @@ OFF = 1
 
 # Loaded from controller_mapping.json, with built-in defaults before setup is run.
 KEY_MAPPING_LEFT, KEY_MAPPING_RIGHT, KEY_MAPPING_CLICK = load_controller_mappings()
+
+
+class ZwiftHapticHub:
+    """Send haptic feedback to every connected Zwift Play controller."""
+
+    def __init__(self, enabled: Optional[bool] = None):
+        self.enabled = vibration_enabled() if enabled is None else enabled
+        self._clients: dict[str, BleakClient] = {}
+
+    def register(self, label: str, client: BleakClient) -> None:
+        self._clients[label] = client
+
+    def unregister(self, label: str) -> None:
+        self._clients.pop(label, None)
+
+    async def pulse(self, count: int = 1, gap_seconds: float = 0.16) -> bool:
+        if not self.enabled or not self._clients:
+            return False
+        delivered = False
+        for pulse_index in range(max(1, count)):
+            results = await asyncio.gather(
+                *(
+                    client.write_gatt_char(ZWIFT_SYNC_RX_CHARACTERISTIC_UUID, VIBRATE_COMMAND, response=False)
+                    for client in list(self._clients.values())
+                    if client.is_connected
+                ),
+                return_exceptions=True,
+            )
+            delivered = delivered or any(not isinstance(result, Exception) for result in results)
+            if pulse_index + 1 < count:
+                await asyncio.sleep(gap_seconds)
+        return delivered
 
 # Global keyboard controller
 keyboard = Controller()
@@ -232,7 +265,8 @@ async def connect_to_controller(
     key_mapping_left: Dict[str, str],
     key_mapping_right: Dict[str, str],
     key_mapping_click: Dict[str, str],
-    on_click_power_delta: Optional[Callable[[int], None]],
+    on_click_power_delta: Optional[Callable[[int], Any]],
+    haptic_hub: ZwiftHapticHub,
 ) -> None:
     """Connect to a controller and map buttons to keyboard."""
     # Include address to avoid collisions when multiple controllers share the same name.
@@ -273,7 +307,9 @@ async def connect_to_controller(
                                 release_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
                         for button in current_buttons - previous_buttons:
                             if on_click_power_delta is not None:
-                                on_click_power_delta(1 if button == "Plus" else -1)
+                                adjustment_applied = on_click_power_delta(1 if button == "Plus" else -1)
+                                if adjustment_applied:
+                                    await haptic_hub.pulse()
                             else:
                                 press_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
                         device_pressed_keys[device_label] = current_buttons
@@ -344,6 +380,8 @@ async def connect_to_controller(
 
             try:
                 await client.write_gatt_char(ZWIFT_SYNC_RX_CHARACTERISTIC_UUID, RIDE_ON, response=False)
+                if controller_type == "play":
+                    haptic_hub.register(device_label, client)
                 print(f"{device_label} Ready.")
             except Exception as e:
                 print(f"{device_label} Failed to write handshake: {e}")
@@ -352,6 +390,7 @@ async def connect_to_controller(
                 while True:
                     await asyncio.sleep(0.1)
             finally:
+                haptic_hub.unregister(device_label)
                 _release_all_for_device()
                 try:
                     await client.stop_notify(ZWIFT_ASYNC_CHARACTERISTIC_UUID)
@@ -379,12 +418,14 @@ async def start_controller_mapper(
     key_mapping_left: Optional[Dict[str, str]] = None,
     key_mapping_right: Optional[Dict[str, str]] = None,
     key_mapping_click: Optional[Dict[str, str]] = None,
-    on_click_power_delta: Optional[Callable[[int], None]] = None,
+    on_click_power_delta: Optional[Callable[[int], Any]] = None,
+    haptic_hub: Optional[ZwiftHapticHub] = None,
 ) -> None:
     """Scan once and connect to discovered controllers (runs until disconnect/cancel)."""
     key_mapping_left = KEY_MAPPING_LEFT if key_mapping_left is None else key_mapping_left
     key_mapping_right = KEY_MAPPING_RIGHT if key_mapping_right is None else key_mapping_right
     key_mapping_click = KEY_MAPPING_CLICK if key_mapping_click is None else key_mapping_click
+    haptic_hub = haptic_hub or ZwiftHapticHub()
 
     devices = await find_devices(
         target_name_substr=target_name_substr,
@@ -403,6 +444,7 @@ async def start_controller_mapper(
             key_mapping_right=key_mapping_right,
             key_mapping_click=key_mapping_click,
             on_click_power_delta=on_click_power_delta,
+            haptic_hub=haptic_hub,
         )
         for device in devices
     ]
@@ -421,9 +463,11 @@ async def run_zwift_play_mapper_forever(
     key_mapping_left: Optional[Dict[str, str]] = None,
     key_mapping_right: Optional[Dict[str, str]] = None,
     key_mapping_click: Optional[Dict[str, str]] = None,
-    on_click_power_delta: Optional[Callable[[int], None]] = None,
+    on_click_power_delta: Optional[Callable[[int], Any]] = None,
+    haptic_hub: Optional[ZwiftHapticHub] = None,
 ) -> None:
     """Continuously scan/connect so you can run this in the background."""
+    haptic_hub = haptic_hub or ZwiftHapticHub()
     while True:
         try:
             configured_targets = addresses_for("zwift_play") if target_address is None else None
@@ -438,6 +482,7 @@ async def run_zwift_play_mapper_forever(
                     key_mapping_right=key_mapping_right,
                     key_mapping_click=key_mapping_click,
                     on_click_power_delta=on_click_power_delta,
+                    haptic_hub=haptic_hub,
                 )
             else:
                 configured_clicks = addresses_for("zwift_click") or []
@@ -459,6 +504,7 @@ async def run_zwift_play_mapper_forever(
                             key_mapping_right=key_mapping_right,
                             key_mapping_click=key_mapping_click,
                             on_click_power_delta=on_click_power_delta,
+                            haptic_hub=haptic_hub,
                         )
                         for controller_type, address in targets
                     ),

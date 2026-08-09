@@ -55,6 +55,7 @@ class ControllerConfigError(RuntimeError):
 def default_config() -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
+        "settings": {"vibration_enabled": True},
         "mappings": {profile: dict(mapping) for profile, mapping in DEFAULT_MAPPINGS.items()},
     }
 
@@ -72,7 +73,13 @@ def load_controller_config(path: Path = DEFAULT_CONFIG_PATH) -> dict[str, Any]:
     if not isinstance(mappings, dict):
         raise ControllerConfigError(f"Missing mappings object in {path}")
 
-    normalized = {"schema_version": SCHEMA_VERSION, "mappings": {}}
+    settings = raw.get("settings")
+    vibration_enabled = settings.get("vibration_enabled", True) if isinstance(settings, dict) else True
+    normalized = {
+        "schema_version": SCHEMA_VERSION,
+        "settings": {"vibration_enabled": bool(vibration_enabled)},
+        "mappings": {},
+    }
     for profile, buttons in PROFILE_BUTTONS.items():
         value = mappings.get(profile)
         if not isinstance(value, dict):
@@ -95,3 +102,6 @@ def mappings(path: Path = DEFAULT_CONFIG_PATH) -> tuple[dict[str, str], dict[str
         dict(values["zwift_click"]),
     )
 
+
+def vibration_enabled(path: Path = DEFAULT_CONFIG_PATH) -> bool:
+    return bool(load_controller_config(path)["settings"]["vibration_enabled"])
