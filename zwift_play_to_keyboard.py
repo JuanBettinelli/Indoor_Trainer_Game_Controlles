@@ -63,6 +63,7 @@ class ZwiftHapticHub:
     def __init__(self, enabled: Optional[bool] = None):
         self.enabled = vibration_enabled() if enabled is None else enabled
         self._clients: dict[str, BleakClient] = {}
+        self._write_lock = asyncio.Lock()
 
     def register(self, label: str, client: BleakClient) -> None:
         self._clients[label] = client
@@ -73,20 +74,37 @@ class ZwiftHapticHub:
     async def pulse(self, count: int = 1, gap_seconds: float = 0.16) -> bool:
         if not self.enabled or not self._clients:
             return False
-        delivered = False
-        for pulse_index in range(max(1, count)):
-            results = await asyncio.gather(
-                *(
-                    client.write_gatt_char(ZWIFT_SYNC_RX_CHARACTERISTIC_UUID, VIBRATE_COMMAND, response=False)
-                    for client in list(self._clients.values())
-                    if client.is_connected
-                ),
-                return_exceptions=True,
-            )
-            delivered = delivered or any(not isinstance(result, Exception) for result in results)
-            if pulse_index + 1 < count:
-                await asyncio.sleep(gap_seconds)
-        return delivered
+        async with self._write_lock:
+            delivered = False
+            for pulse_index in range(max(1, count)):
+                delivered = await self._write_pulse() or delivered
+                if pulse_index + 1 < count:
+                    await asyncio.sleep(gap_seconds)
+            return delivered
+
+    async def sustained(self, duration_seconds: float = 1.0, repeat_seconds: float = 0.12) -> bool:
+        """Approximate a continuous vibration by refreshing the Play haptic command."""
+        if not self.enabled or not self._clients:
+            return False
+        async with self._write_lock:
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + max(0.0, duration_seconds)
+            delivered = False
+            while loop.time() < deadline:
+                delivered = await self._write_pulse() or delivered
+                await asyncio.sleep(min(repeat_seconds, max(0.0, deadline - loop.time())))
+            return delivered
+
+    async def _write_pulse(self) -> bool:
+        results = await asyncio.gather(
+            *(
+                client.write_gatt_char(ZWIFT_SYNC_RX_CHARACTERISTIC_UUID, VIBRATE_COMMAND, response=False)
+                for client in list(self._clients.values())
+                if client.is_connected
+            ),
+            return_exceptions=True,
+        )
+        return any(not isinstance(result, Exception) for result in results)
 
 # Global keyboard controller
 keyboard = Controller()

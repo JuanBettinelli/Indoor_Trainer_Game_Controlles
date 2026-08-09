@@ -56,7 +56,7 @@ This creates the local `controller_mapping.json`. You can configure the left and
 
 During ERG workouts (scripts 2–6 and 9), Zwift Click has a dedicated power function: `Plus` raises the smart-trainer target by 5 W and `Minus` lowers it by 5 W. This adjustment is applied as an offset to the current interval target, so it remains active when the workout moves to the next step. Outside an ERG workout, the normal keyboard mapping from `controller_mapping.json` is used.
 
-When vibration feedback is enabled, a successful Zwift Click power adjustment produces one short pulse on both connected Play controllers. A new Intervals.icu workout step produces two pulses. There is no pulse when ERG is disabled or a safety limit prevents the target from changing. Enable or disable vibration with `python 0_Setup_Controllers.py`. To test the motors directly, close other apps using the controllers and run `python 0_Test_ZwiftPlay_Vibration.py`.
+When vibration feedback is enabled, a successful Zwift Click power adjustment produces one short pulse on both connected Play controllers. Before a new Intervals.icu workout step, the countdown is one pulse at 5 seconds, two pulses at 2 seconds, and three pulses at 1 second. The new step starts with an approximately one-second sustained vibration. There is no power-adjustment pulse when ERG is disabled or a safety limit prevents the target from changing. Enable or disable vibration with `python 0_Setup_Controllers.py`. To test the motors directly, close other apps using the controllers and run `python 0_Test_ZwiftPlay_Vibration.py`.
 
 ⸻
 

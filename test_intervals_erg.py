@@ -1,7 +1,7 @@
 import datetime as dt
 import unittest
 
-from erg_workout_runner import WorkoutTimeline, step_power, workout_preview
+from erg_workout_runner import WorkoutTimeline, interval_countdown_cues, step_power, workout_preview
 from intervals_workout import WorkoutError, parse_workout_description
 
 
@@ -37,6 +37,13 @@ Test
 
 
 class TimelineTests(unittest.TestCase):
+    def test_interval_countdown_cues_fire_when_threshold_is_crossed(self):
+        self.assertEqual([1], interval_countdown_cues(5.1, 4.9))
+        self.assertEqual([2], interval_countdown_cues(2.1, 1.9))
+        self.assertEqual([3], interval_countdown_cues(1.1, 0.9))
+        self.assertEqual([1, 2], interval_countdown_cues(5.1, 1.9))
+        self.assertEqual([], interval_countdown_cues(4.9, 2.1))
+
     def test_timeline_targets_and_finish(self):
         workout = parse_workout_description("Main\n- Ramp 10s ramp 50-100%\n- Free 5s freeride")
         timeline = WorkoutTimeline(workout, ftp=200, max_watts=300)
@@ -59,4 +66,3 @@ class TimelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

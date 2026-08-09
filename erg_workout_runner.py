@@ -7,6 +7,14 @@ from dataclasses import dataclass
 from intervals_workout import Workout, WorkoutError, WorkoutStep
 
 
+INTERVAL_COUNTDOWN_CUES = ((5.0, 1), (2.0, 2), (1.0, 3))
+
+
+def interval_countdown_cues(previous_remaining: float, current_remaining: float) -> list[int]:
+    """Return pulse counts for countdown thresholds crossed since the previous update."""
+    return [pulses for threshold, pulses in INTERVAL_COUNTDOWN_CUES if previous_remaining > threshold >= current_remaining]
+
+
 @dataclass(frozen=True)
 class TimelineState:
     step_index: int
@@ -100,4 +108,3 @@ def workout_preview(timeline: WorkoutTimeline) -> str:
             cadence += " rpm"
         lines.append(f"{index:>2}. {format_seconds(step.duration_seconds)} | {target}{cadence} | {step.name}")
     return "\n".join(lines)
-

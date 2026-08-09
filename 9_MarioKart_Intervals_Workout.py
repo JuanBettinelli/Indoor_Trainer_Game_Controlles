@@ -17,7 +17,7 @@ from pycycling.fitness_machine_service import FitnessMachineService
 from csc_cadence_sensor import CSC_MEASUREMENT_UUID, CSCCadenceCalculator, parse_csc_measurement
 from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, load_device_config
 from erg_power_adjustment import ErgPowerAdjustment
-from erg_workout_runner import WorkoutTimeline, format_seconds, workout_preview
+from erg_workout_runner import WorkoutTimeline, format_seconds, interval_countdown_cues, workout_preview
 from intervals_workout import (
     Workout,
     WorkoutError,
@@ -185,6 +185,17 @@ async def run_trainer(
     async with BleakClient(address) as trainer_client:
         trainer = FitnessMachineService(trainer_client)
         haptic_hub = ZwiftHapticHub()
+        haptic_tasks: set[asyncio.Task] = set()
+
+        def haptic_finished(task: asyncio.Task) -> None:
+            haptic_tasks.discard(task)
+            if not task.cancelled():
+                task.exception()
+
+        def schedule_haptic(coroutine) -> None:
+            task = asyncio.create_task(coroutine)
+            haptic_tasks.add(task)
+            task.add_done_callback(haptic_finished)
         overlay.start()
         await trainer.enable_control_point_indicate()
         await trainer.request_control()
@@ -277,6 +288,7 @@ async def run_trainer(
 
         last_target: int | None | object = object()
         last_step = -1
+        previous_remaining: float | None = None
         erg_active = False
         try:
             while True:
@@ -290,8 +302,14 @@ async def run_trainer(
                 if state.step_index != last_step:
                     print(f"\nStep {state.step_index + 1}/{len(timeline.workout.steps)}: {state.step.name}")
                     if last_step >= 0:
-                        await haptic_hub.pulse(count=2)
+                        schedule_haptic(haptic_hub.sustained(duration_seconds=1.0))
                     last_step = state.step_index
+                    previous_remaining = float(state.step.duration_seconds) + 1e-9
+
+                if previous_remaining is not None and state.step_index + 1 < len(timeline.workout.steps):
+                    for pulse_count in interval_countdown_cues(previous_remaining, state.remaining_in_step):
+                        schedule_haptic(haptic_hub.pulse(count=pulse_count))
+                previous_remaining = state.remaining_in_step
 
                 if state.target_watts is None:
                     if erg_active:
@@ -338,6 +356,10 @@ async def run_trainer(
                     await zwift_task
                 except (asyncio.CancelledError, Exception):
                     pass
+            for haptic_task in list(haptic_tasks):
+                haptic_task.cancel()
+            if haptic_tasks:
+                await asyncio.gather(*haptic_tasks, return_exceptions=True)
             if cadence_client is not None:
                 try:
                     if cadence_client.is_connected and cadence_notify_active:

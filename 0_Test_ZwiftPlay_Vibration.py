@@ -33,6 +33,12 @@ async def main() -> None:
         await asyncio.sleep(1.0)
         print("Double pulse...")
         await hub.pulse(count=2)
+        await asyncio.sleep(1.0)
+        print("Triple pulse...")
+        await hub.pulse(count=3)
+        await asyncio.sleep(1.0)
+        print("One-second sustained vibration...")
+        await hub.sustained(duration_seconds=1.0)
         await asyncio.sleep(0.5)
     finally:
         for client in clients:
@@ -44,4 +50,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
