@@ -14,7 +14,7 @@ from bleak import BleakClient
 from pynput.keyboard import Controller, Key, Listener
 from pycycling.fitness_machine_service import FitnessMachineService
 
-from activity_recording import WorkoutRecorder
+from activity_recording import WorkoutRecorder, require_fit_export
 from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, load_device_config
 from erg_power_adjustment import ErgPowerAdjustment
 from erg_workout_runner import WorkoutTimeline, format_seconds, interval_countdown_cues, workout_preview
@@ -176,10 +176,9 @@ async def run_trainer(
 
     def on_finish_key(key) -> bool | None:
         nonlocal finish_requested
-        if key == Key.f12:
+        if key == Key.f12 and not finish_requested:
             finish_requested = True
             print("\nF12 pressed: finishing and saving the workout ...")
-            return False
         return None
 
     finish_listener = Listener(on_press=on_finish_key)
@@ -338,6 +337,7 @@ async def run_trainer(
                 await asyncio.sleep(0.25)
         finally:
             finish_listener.stop()
+            finish_listener.join(timeout=1.0)
             try:
                 await trainer.reset()
             except Exception:
@@ -388,6 +388,8 @@ def main() -> int:
         workout = load_selected_workout(args)
         timeline = WorkoutTimeline(workout, get_ftp(args.ftp), args.max_watts)
         print("\n" + workout_preview(timeline) + "\n")
+        if not args.simulate:
+            require_fit_export()
         if not args.yes and input("Start workout? [y/N]: ").strip().lower() not in {"y", "yes", "j", "ja"}:
             print("Cancelled before trainer connection.")
             return 0
@@ -449,7 +451,7 @@ def main() -> int:
                 activity_id = result.get("id") if isinstance(result, dict) else None
                 print(f"Uploaded to Intervals.icu{f' as {activity_id}' if activity_id else ''}.")
         return 0
-    except (WorkoutError, KeyboardInterrupt) as exc:
+    except (WorkoutError, RuntimeError, KeyboardInterrupt) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

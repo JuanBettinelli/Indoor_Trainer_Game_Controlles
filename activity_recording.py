@@ -12,6 +12,19 @@ from pathlib import Path
 from typing import Any
 
 
+def require_fit_export() -> None:
+    """Fail before a workout starts if its FIT file could not be written."""
+    try:
+        from fit_tool.fit_file_builder import FitFileBuilder  # noqa: F401
+    except ImportError as exc:
+        import sys
+
+        raise RuntimeError(
+            "FIT export is not installed for this Python interpreter. Run:\n"
+            f"  {sys.executable} -m pip install fit-tool==0.9.16"
+        ) from exc
+
+
 @dataclass
 class ActivitySample:
     timestamp: dt.datetime
@@ -78,6 +91,7 @@ class WorkoutRecorder:
         return self.fit_path
 
     def _write_fit(self) -> None:
+        require_fit_export()
         try:
             from fit_tool.fit_file_builder import FitFileBuilder
             from fit_tool.profile.messages.activity_message import ActivityMessage
@@ -88,7 +102,7 @@ class WorkoutRecorder:
             from fit_tool.profile.messages.session_message import SessionMessage
             from fit_tool.profile.profile_type import Activity, Event, EventType, FileType, Manufacturer, Sport, SubSport
         except ImportError as exc:
-            raise RuntimeError("FIT export requires 'fit-tool'. Run: python3 -m pip install --user fit-tool") from exc
+            raise RuntimeError("FIT export became unavailable after the startup check") from exc
 
         builder = FitFileBuilder(auto_define=True, min_string_size=80)
         start_ms = round(self.started_at.timestamp() * 1000)
