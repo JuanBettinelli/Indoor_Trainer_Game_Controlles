@@ -47,6 +47,17 @@ DEFAULT_MAPPINGS: dict[str, dict[str, str]] = {
     "zwift_click": {"Plus": "right", "Minus": "left"},
 }
 
+KEY_NAME_ALIASES = {
+    "escape": "esc",
+    "return": "enter",
+    "spacebar": "space",
+}
+
+
+def normalize_key_name(key_name: str) -> str:
+    normalized = key_name.strip().lower()
+    return KEY_NAME_ALIASES.get(normalized, normalized)
+
 
 class ControllerConfigError(RuntimeError):
     pass

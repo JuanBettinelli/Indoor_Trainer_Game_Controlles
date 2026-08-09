@@ -3,10 +3,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from controller_config import CLICK_BUTTONS, DEFAULT_MAPPINGS, default_config, load_controller_config, mappings, vibration_enabled
+from controller_config import (
+    CLICK_BUTTONS,
+    DEFAULT_MAPPINGS,
+    default_config,
+    load_controller_config,
+    mappings,
+    normalize_key_name,
+    vibration_enabled,
+)
 
 
 class ControllerConfigTests(unittest.TestCase):
+    def test_keyboard_aliases_use_pynput_names(self):
+        self.assertEqual("esc", normalize_key_name("escape"))
+        self.assertEqual("enter", normalize_key_name("RETURN"))
+        self.assertEqual("a", normalize_key_name("A"))
+
     def test_defaults_include_play_and_click(self):
         config = default_config()
         self.assertEqual("up", config["mappings"]["zwift_play_left"]["Y"])

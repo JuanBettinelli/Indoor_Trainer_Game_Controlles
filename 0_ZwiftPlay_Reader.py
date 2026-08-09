@@ -179,6 +179,7 @@ async def connect_to_controller(device: object, device_id: int) -> None:
     print(f"\n{device_label} Connecting ({device.address})...")
     try:
         async with BleakClient(device) as client:
+            battery_reported = False
             print(f"{device_label} Connected. Discovering services...")
             # Ensure services are resolved
             services = client.services
@@ -193,6 +194,7 @@ async def connect_to_controller(device: object, device_id: int) -> None:
 
             # Setup notification handlers
             async def on_async(_, data: bytearray):
+                nonlocal battery_reported
                 b = bytes(data)
                 if not b:
                     return
@@ -210,10 +212,9 @@ async def connect_to_controller(device: object, device_id: int) -> None:
                     except Exception as e:
                         print(f"{device_label} Error parsing PlayKeyPadStatus: {e}; raw={payload.hex(' ')}")
                 elif msg_type == BATTERY_LEVEL_TYPE:
-                    if len(payload) >= 2:
+                    if len(payload) >= 2 and not battery_reported:
                         print(f"{device_label} Battery: {payload[1]}%")
-                    else:
-                        print(f"{device_label} Battery notification: {payload.hex(' ')}")
+                        battery_reported = True
                 elif msg_type == EMPTY_MESSAGE_TYPE:
                     # Idle/keep-alive
                     pass

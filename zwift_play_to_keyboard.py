@@ -21,7 +21,7 @@ from typing import Dict, Tuple, List, Optional, Set, Any, Callable
 from bleak import BleakClient, BleakScanner
 from pynput.keyboard import Controller, Key
 
-from controller_config import mappings as load_controller_mappings, vibration_enabled
+from controller_config import mappings as load_controller_mappings, normalize_key_name, vibration_enabled
 from runtime_devices import addresses_for
 
 # Zwift UUIDs extracted from swiftcontrol (BikeControl)
@@ -200,9 +200,10 @@ def decode_buttons(fields: Dict[int, int], *, side_override: Optional[str] = Non
 
 def get_key_object(key_name: str):
     """Convert string key name to pynput Key object."""
-    if hasattr(Key, key_name):
-        return getattr(Key, key_name)
-    return key_name
+    normalized = normalize_key_name(key_name)
+    if hasattr(Key, normalized):
+        return getattr(Key, normalized)
+    return normalized
 
 
 def get_key_mapping(
@@ -295,6 +296,8 @@ async def connect_to_controller(
 
     try:
         async with BleakClient(device) as client:
+            battery_reported = False
+
             def _release_all_for_device():
                 for button in list(device_pressed_keys.get(device_label, set())):
                     for side in ["left", "right", "click"]:
@@ -304,6 +307,7 @@ async def connect_to_controller(
                             pass
 
             async def on_async(_, data: bytearray):
+                nonlocal battery_reported
                 b = bytes(data)
                 if not b:
                     return
@@ -332,7 +336,7 @@ async def connect_to_controller(
                                 press_key(device_label, button, "click", key_mapping_left, key_mapping_right, key_mapping_click)
                         device_pressed_keys[device_label] = current_buttons
                     except Exception as e:
-                        print(f"{device_label} Error parsing ClickKeyPadStatus: {e}; raw={payload.hex(' ')}")
+                        print(f"{device_label} Error handling Click notification: {e}; raw={payload.hex(' ')}")
 
                 elif msg_type == PLAY_NOTIFICATION_MESSAGE_TYPE and controller_type == "play":
                     try:
@@ -377,11 +381,12 @@ async def connect_to_controller(
                         device_pressed_keys[device_label] = current_buttons
 
                     except Exception as e:
-                        print(f"{device_label} Error parsing PlayKeyPadStatus: {e}; raw={payload.hex(' ')}")
+                        print(f"{device_label} Error handling Play notification: {e}; raw={payload.hex(' ')}")
 
                 elif msg_type == BATTERY_LEVEL_TYPE:
-                    if len(payload) >= 2:
+                    if len(payload) >= 2 and not battery_reported:
                         print(f"{device_label} Battery: {payload[1]}%")
+                        battery_reported = True
 
             async def on_sync_tx(_, __):
                 pass
