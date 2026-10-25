@@ -353,6 +353,10 @@ async def run_trainer(
             finish_listener.stop()
             finish_listener.join(timeout=1.0)
             try:
+                await trainer.disable_indoor_bike_data_notify()
+            except Exception:
+                pass
+            try:
                 await trainer.reset()
             except Exception:
                 pass
@@ -371,8 +375,10 @@ async def run_trainer(
                 await asyncio.gather(*haptic_tasks, return_exceptions=True)
             await sensor_hub.stop()
             overlay.close()
-            if recorder.samples:
-                fit_path = recorder.finish()
+    # Keep the raw file open until the trainer BLE context has completely
+    # disconnected; CoreBluetooth may dispatch one last queued notification.
+    if recorder.samples:
+        fit_path = recorder.finish()
     if fit_path is None:
         raise WorkoutError(f"No samples recorded. Raw log: {recorder.raw_path}")
     return fit_path, finish_requested

@@ -49,10 +49,15 @@ class WorkoutRecorder:
         self.raw_path = self.base_path.with_suffix(".raw.jsonl")
         self.fit_path = self.base_path.with_suffix(".fit")
         self.samples: list[ActivitySample] = []
+        self._finished = False
         self._raw_file = self.raw_path.open("a", encoding="utf-8")
         self.raw_event("metadata", {"workout_name": workout_name, "event_id": event_id})
 
     def raw_event(self, source: str, payload: dict[str, Any]) -> None:
+        # CoreBluetooth can deliver an already queued notification while a
+        # peripheral is disconnecting. The workout is complete at that point.
+        if self._finished:
+            return
         event = {
             "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
             "elapsed_seconds": time.monotonic() - self._started_monotonic,
@@ -84,6 +89,11 @@ class WorkoutRecorder:
         )
 
     def finish(self) -> Path:
+        if self._finished:
+            if self.fit_path.exists():
+                return self.fit_path
+            raise RuntimeError("Workout recorder already finished without a FIT file")
+        self._finished = True
         self._raw_file.close()
         if not self.samples:
             raise RuntimeError("No workout samples were recorded")

@@ -41,6 +41,10 @@ class ActivityRecordingTests(unittest.TestCase):
             self.assertEqual(140, records[0].heart_rate)
             raw_text = recorder.raw_path.read_text(encoding="utf-8")
             self.assertIn('"trainer_power": 195', raw_text)
+            size_after_finish = recorder.raw_path.stat().st_size
+            recorder.raw_event("indoor_trainer", {"trainer_power": 999})
+            self.assertEqual(size_after_finish, recorder.raw_path.stat().st_size)
+            self.assertEqual(fit_path, recorder.finish())
 
     def test_csc_wheel_and_crank_data_are_retained(self):
         payload = bytes([0x03]) + (1234).to_bytes(4, "little") + (500).to_bytes(2, "little") + (42).to_bytes(2, "little") + (600).to_bytes(2, "little")
