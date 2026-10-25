@@ -11,11 +11,13 @@ import time
 from pathlib import Path
 
 from bleak import BleakClient
+from bleak.exc import BleakError
 from pynput.keyboard import Controller, Key, Listener
 from pycycling.fitness_machine_service import FitnessMachineService
 
 from activity_recording import WorkoutRecorder, require_fit_export
-from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, load_device_config
+from bluetooth_connection import BluetoothDeviceUnavailable, resolve_ble_device
+from device_config import DEFAULT_CONFIG_PATH, configured_address, configured_addresses, configured_devices, load_device_config
 from erg_power_adjustment import ErgPowerAdjustment
 from erg_workout_runner import WorkoutTimeline, format_seconds, interval_countdown_cues, workout_preview
 from intervals_workout import (
@@ -168,6 +170,9 @@ async def run_trainer(
     controller_addresses: list[tuple[str, str]] | None,
     recorder: WorkoutRecorder,
     wheel_circumference_m: float,
+    trainer_name: str | None = None,
+    connection_attempts: int = 3,
+    scan_timeout: float = 6.0,
 ) -> tuple[Path, bool]:
     last_log = 0.0
     fit_path: Path | None = None
@@ -193,7 +198,13 @@ async def run_trainer(
             return False
         return power_adjustment.change(direction, base_target) is not None
 
-    async with BleakClient(address) as trainer_client:
+    trainer_device = await resolve_ble_device(
+        address,
+        trainer_name,
+        attempts=connection_attempts,
+        scan_timeout=scan_timeout,
+    )
+    async with BleakClient(trainer_device) as trainer_client:
         trainer = FitnessMachineService(trainer_client)
         sensor_hub = WorkoutSensorHub(
             wheel_circumference_m=wheel_circumference_m,
@@ -376,6 +387,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-watts", type=positive_int, default=600, help="Hard safety ceiling (default: 600 W)")
     parser.add_argument("--devices", type=Path, default=DEFAULT_CONFIG_PATH, help="Device configuration JSON")
     parser.add_argument("--trainer", help="Override the configured FTMS trainer address")
+    parser.add_argument("--trainer-name", help="Optional BLE name used to rediscover an overridden trainer")
+    parser.add_argument("--connection-attempts", type=positive_int, default=3, help="Trainer scan attempts (default: 3)")
+    parser.add_argument("--scan-timeout", type=float, default=6.0, help="Seconds per trainer scan (default: 6)")
     parser.add_argument("--recordings-dir", type=Path, default=Path(__file__).with_name("recordings"))
     parser.add_argument("--wheel-circumference-mm", type=positive_int, default=2105)
     parser.add_argument("--no-upload", action="store_true", help="Save locally without uploading to Intervals.icu")
@@ -398,12 +412,18 @@ def main() -> int:
             return 0
         if args.simulation_speed <= 0:
             raise WorkoutError("Simulation speed must be positive")
+        if args.scan_timeout <= 0:
+            raise WorkoutError("Scan timeout must be positive")
         if args.simulate:
             asyncio.run(simulate(timeline, args.simulation_speed))
         else:
             config_exists = args.devices.exists()
             config = load_device_config(args.devices)
             trainer_address = args.trainer or configured_address(config, "indoor_trainer") or DEVICE_ADDRESS
+            trainer_records = configured_devices(config, "indoor_trainer")
+            trainer_name = args.trainer_name
+            if trainer_name is None and args.trainer is None and trainer_records:
+                trainer_name = str(trainer_records[0].get("name") or "") or None
             cadence_address = configured_address(config, "cadence_sensor")
             if cadence_address is None and not config_exists:
                 cadence_address = CADENCE_SENSOR_ADDRESS
@@ -420,6 +440,8 @@ def main() -> int:
                     ("click", address) for address in configured_addresses(config, "zwift_click")
                 )
             print(f"Trainer: {trainer_address}")
+            if trainer_name:
+                print(f"Trainer name fallback: {trainer_name}")
             for sensor_role, sensor_address in sensor_addresses.items():
                 print(f"{sensor_role.replace('_', ' ').title()}: {sensor_address or 'not configured'}")
             if controller_addresses is not None:
@@ -433,6 +455,9 @@ def main() -> int:
                     controller_addresses,
                     recorder,
                     args.wheel_circumference_mm / 1000.0,
+                    trainer_name,
+                    args.connection_attempts,
+                    args.scan_timeout,
                 )
             )
             print(f"\nFIT activity saved: {fit_path}")
@@ -454,7 +479,7 @@ def main() -> int:
                 activity_id = result.get("id") if isinstance(result, dict) else None
                 print(f"Uploaded to Intervals.icu{f' as {activity_id}' if activity_id else ''}.")
         return 0
-    except (WorkoutError, RuntimeError, KeyboardInterrupt) as exc:
+    except (WorkoutError, BluetoothDeviceUnavailable, BleakError, RuntimeError, KeyboardInterrupt) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

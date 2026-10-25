@@ -33,6 +33,7 @@ Bluetooth device setup
 	•	Detected service UUIDs and device names provide type suggestions, but you always make the final assignment.
 	•	Selections are stored in the local `devices.json`. This file is intentionally excluded from Git because Bluetooth addresses are computer-specific.
 	•	Run the setup again at any time to add or update devices. Unselected saved devices remain unchanged. Select a saved device and enter `-` at the type prompt to remove it from every role.
+	•	Script 9 scans for the trainer before connecting. It first matches the saved Bluetooth address and then falls back to the saved device name if macOS has assigned a different UUID. It retries three times and reports likely causes instead of terminating with a traceback. Wake the trainer by pedalling and disconnect it from Wahoo, Zwift, Garmin, or other Bluetooth apps before starting.
 
 ```sh
 python 0_Setup_Devices.py
