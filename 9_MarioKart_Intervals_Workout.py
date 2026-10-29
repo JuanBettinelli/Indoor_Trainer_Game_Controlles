@@ -31,6 +31,7 @@ from intervals_workout import (
 )
 from overlay_udp import OverlayClient, OverlayConfig
 from runtime_devices import LEGACY_CADENCE_SENSOR_ADDRESS, LEGACY_INDOOR_TRAINER_ADDRESS
+from workout_finish_control import is_finish_key
 from workout_sensors import WorkoutSensorHub
 from zwift_play_to_keyboard import ZwiftHapticHub, run_zwift_play_mapper_forever
 
@@ -180,11 +181,9 @@ async def run_trainer(
     current_base_target: dict[str, int | None] = {"watts": None}
     finish_requested = False
 
-    def on_finish_key(key) -> bool | None:
+    def on_finish_key(key, injected: bool = False) -> bool | None:
         nonlocal finish_requested
-        character = getattr(key, "char", None)
-        is_quit_key = key == Key.f12 or (isinstance(character, str) and character.lower() == "q")
-        if is_quit_key and not finish_requested:
+        if is_finish_key(key, injected) and not finish_requested:
             finish_requested = True
             print("\nFinish key pressed: finishing and saving the workout ...")
         return None
@@ -276,7 +275,7 @@ async def run_trainer(
         start_time = time.monotonic()
         next_sample = 0.0
         finish_listener.start()
-        print("Press Q at any time to finish early and save the workout (F12 also works).")
+        print("Press physical Q at any time to finish early and save the workout (F12 also works).")
         try:
             while True:
                 elapsed = time.monotonic() - start_time
