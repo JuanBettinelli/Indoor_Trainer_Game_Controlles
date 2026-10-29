@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from fit_tool.profile.messages.record_message import RecordMessage
 from activity_recording import WorkoutRecorder
 from csc_cadence_sensor import parse_csc_measurement_full
 from intervals_workout import upload_activity_file
-from workout_sensors import RevolutionRateCalculator, WheelSpeedCalculator
+from workout_sensors import RevolutionRateCalculator, WheelSpeedCalculator, WorkoutSensorHub
 
 
 class ActivityRecordingTests(unittest.TestCase):
@@ -61,6 +62,31 @@ class ActivityRecordingTests(unittest.TestCase):
         speed, distance = wheel.update(11, 2024)
         self.assertAlmostEqual(2.0, speed)
         self.assertAlmostEqual(2.0, distance)
+
+    def test_power_meter_cadence_uses_cycling_power_tick_rate(self):
+        hub = WorkoutSensorHub()
+        hub.power_crank.update(100, 1000)
+        self.assertAlmostEqual(60.0, hub.power_crank.update(101, 2024))
+
+    def test_cadence_priority_is_power_meter_then_sensor_then_trainer(self):
+        hub = WorkoutSensorHub()
+        now = time.monotonic()
+        hub.latest["trainer_cadence"] = 75.0
+        snapshot = hub.snapshot()
+        self.assertEqual(75.0, snapshot["cadence"])
+        self.assertEqual("trainer", snapshot["cadence_source"])
+
+        hub.latest["cadence_sensor_cadence"] = 82.0
+        hub.updated["cadence_sensor"] = now
+        snapshot = hub.snapshot()
+        self.assertEqual(82.0, snapshot["cadence"])
+        self.assertEqual("cadence_sensor", snapshot["cadence_source"])
+
+        hub.latest["power_meter_cadence"] = 91.0
+        hub.updated["power_meter_cadence"] = now
+        snapshot = hub.snapshot()
+        self.assertEqual(91.0, snapshot["cadence"])
+        self.assertEqual("power_meter", snapshot["cadence_source"])
 
     def test_intervals_upload_is_multipart(self):
         class Response:

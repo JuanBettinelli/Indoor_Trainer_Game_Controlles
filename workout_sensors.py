@@ -73,7 +73,9 @@ class WorkoutSensorHub:
     def __init__(self, *, wheel_circumference_m: float = 2.105, raw_callback: RawCallback | None = None):
         self.raw_callback = raw_callback
         self.wheel = WheelSpeedCalculator(wheel_circumference_m)
-        self.power_crank = RevolutionRateCalculator(2048.0)
+        # Cycling Power Service crank event time uses 1/1024-second units.
+        # Using 2048 doubles cadence from pedal power meters such as Assioma.
+        self.power_crank = RevolutionRateCalculator(1024.0)
         self.cadence_calculator = CSCCadenceCalculator(stale_seconds=3.0)
         self._last_power_crank: tuple[int, int] | None = None
         self._last_cadence_crank: tuple[int, int] | None = None
@@ -120,16 +122,20 @@ class WorkoutSensorHub:
         power = self.latest["power_meter_power"] if power_fresh else self.latest["trainer_power"]
         if power_cadence_fresh and self.latest["power_meter_cadence"] is not None:
             cadence = self.latest["power_meter_cadence"]
+            cadence_source = "power_meter"
         elif cadence_fresh:
             cadence = self.latest["cadence_sensor_cadence"]
+            cadence_source = "cadence_sensor"
         else:
             cadence = self.latest["trainer_cadence"]
+            cadence_source = "trainer"
         speed = self.latest["speed_sensor_speed"] if speed_fresh else self.latest["trainer_speed"]
         distance = self.latest["speed_sensor_distance"] if speed_fresh else self.latest["trainer_distance"]
         return {
             **self.latest,
             "power": power,
             "cadence": cadence,
+            "cadence_source": cadence_source,
             "speed": speed,
             "distance": distance,
             "heart_rate": self.latest["heart_rate"] if hr_fresh else None,

@@ -318,11 +318,11 @@ async def run_trainer(
                 now = time.monotonic()
                 snapshot = sensor_hub.snapshot()
                 cadence = float(snapshot.get("cadence") or 0)
-                cadence_source = (
-                    "Power meter" if snapshot.get("power_meter_cadence") is not None
-                    else "Cadence sensor" if snapshot.get("cadence_sensor_cadence") is not None
-                    else "Trainer"
-                )
+                cadence_source = {
+                    "power_meter": "Power meter",
+                    "cadence_sensor": "Cadence sensor",
+                    "trainer": "Trainer",
+                }.get(str(snapshot.get("cadence_source")), "Trainer")
                 overlay.send(cadence, cadence_source)
                 apply_game_key_mapping(cadence)
                 if elapsed >= next_sample:

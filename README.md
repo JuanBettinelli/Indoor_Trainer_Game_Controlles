@@ -94,7 +94,7 @@ Intervals.icu workouts in ERG mode (script 9)
 	•	`freeride` resets trainer control for that step and restores ERG control at the next power-controlled step. This is suitable for a 20-minute FTP test.
 	•	During the workout, script 9 records the indoor trainer, power meter, cadence sensor, speed sensor, and heart-rate monitor configured in `devices.json`.
 	•	The finished ride is saved as a standard FIT activity in `recordings/YYYY-MM-DD/`. A matching `.raw.jsonl` sidecar preserves the complete Bluetooth measurements, including fields that FIT or Intervals.icu cannot represent.
-	•	For FIT power and cadence, the power meter has priority. Separate cadence and speed sensors are used next, with the trainer as fallback. Heart rate comes from the configured heart-rate monitor.
+	•	Cadence priority is power-meter pedals first, then a separate cadence sensor, and finally the smart trainer. The live terminal output shows the source actually selected from fresh data. FIT power also prefers the power meter; speed sensors and the trainer provide the corresponding fallbacks. Heart rate comes from the configured heart-rate monitor.
 	•	After the ride, the script asks before uploading the FIT activity to Intervals.icu. The planned workout is normally paired by its time and date.
 	•	Press physical `Q` during a workout to finish it early (`F12` remains available as a fallback). Synthetic keys emitted by Zwift Play/Click mappings are ignored by the finish listener, so a controller button mapped to `q` cannot terminate the workout. The trainer is released safely, all collected data is written to FIT and raw JSONL files, and the normal upload prompt is shown.
 
