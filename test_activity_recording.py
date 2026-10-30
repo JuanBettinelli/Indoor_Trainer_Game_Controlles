@@ -10,7 +10,7 @@ from fit_tool.profile.messages.record_message import RecordMessage
 
 from activity_recording import WorkoutRecorder
 from csc_cadence_sensor import parse_csc_measurement_full
-from intervals_workout import upload_activity_file
+from intervals_workout import upload_activity_file, uploaded_activity_id
 from workout_sensors import RevolutionRateCalculator, WheelSpeedCalculator, WorkoutSensorHub
 
 
@@ -112,6 +112,13 @@ class ActivityRecordingTests(unittest.TestCase):
         self.assertEqual("i123", result["id"])
         self.assertIn("multipart/form-data", request.headers["Content-type"])
         self.assertIn(b"FITDATA", request.data)
+
+    def test_activity_id_is_extracted_from_supported_upload_responses(self):
+        self.assertEqual("i1", uploaded_activity_id({"id": "i1"}))
+        self.assertEqual("i2", uploaded_activity_id([{"icu_athlete_id": "a1", "id": "i2"}]))
+        self.assertEqual("i3", uploaded_activity_id({"activities": [{"id": "i3"}]}))
+        self.assertIsNone(uploaded_activity_id([]))
+        self.assertIsNone(uploaded_activity_id({"status": 200}))
 
 
 if __name__ == "__main__":

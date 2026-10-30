@@ -267,6 +267,22 @@ def upload_activity_file(file_path: Path, *, name: str, description: str = "", e
         raise WorkoutError(f"Could not upload to Intervals.icu: {exc.reason}") from exc
 
 
+def uploaded_activity_id(payload: Any) -> str | None:
+    """Extract an activity ID from current and legacy Intervals upload responses."""
+    candidates: list[Any] = []
+    if isinstance(payload, dict):
+        candidates.append(payload)
+        activities = payload.get("activities")
+        if isinstance(activities, list):
+            candidates.extend(activities)
+    elif isinstance(payload, list):
+        candidates.extend(payload)
+    for candidate in candidates:
+        if isinstance(candidate, dict) and candidate.get("id"):
+            return str(candidate["id"])
+    return None
+
+
 def list_ride_events(date_value: dt.date) -> list[dict[str, Any]]:
     query = urllib.parse.urlencode({"oldest": date_value.isoformat(), "newest": date_value.isoformat()})
     result = api_request(f"/athlete/0/events?{query}")

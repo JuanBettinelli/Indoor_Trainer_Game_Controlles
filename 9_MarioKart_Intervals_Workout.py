@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import json
 import sys
 import time
 from pathlib import Path
@@ -23,10 +24,12 @@ from erg_workout_runner import WorkoutTimeline, format_seconds, interval_countdo
 from intervals_workout import (
     Workout,
     WorkoutError,
+    api_request,
     is_affirmative_response,
     list_ride_events,
     load_workouts_from_plan,
     upload_activity_file,
+    uploaded_activity_id,
     workout_from_event,
 )
 from overlay_udp import OverlayClient, OverlayConfig
@@ -471,6 +474,7 @@ def main() -> int:
                 args.yes or is_affirmative_response(input("Upload completed activity to Intervals.icu? [y/N]: "))
             )
             if should_upload:
+                print("Uploading FIT activity to Intervals.icu ...")
                 result = upload_activity_file(
                     fit_path,
                     name=workout.name,
@@ -481,8 +485,33 @@ def main() -> int:
                     ),
                     external_id=fit_path.stem,
                 )
-                activity_id = result.get("id") if isinstance(result, dict) else None
-                print(f"Uploaded to Intervals.icu{f' as {activity_id}' if activity_id else ''}.")
+                activity_id = uploaded_activity_id(result)
+                if not activity_id:
+                    raise WorkoutError(
+                        "Intervals.icu did not return a created activity ID. "
+                        f"Upload response: {json.dumps(result, ensure_ascii=False, default=str)}"
+                    )
+                verified = api_request(f"/activity/{activity_id}")
+                if not isinstance(verified, dict) or str(verified.get("id") or "") != activity_id:
+                    raise WorkoutError(f"Intervals.icu returned {activity_id}, but verification failed")
+                receipt_path = fit_path.with_suffix(".upload.json")
+                receipt_path.write_text(
+                    json.dumps(
+                        {
+                            "uploaded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                            "activity_id": activity_id,
+                            "external_id": fit_path.stem,
+                            "fit_file": fit_path.name,
+                            "response": result,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    ) + "\n",
+                    encoding="utf-8",
+                )
+                print(f"Uploaded and verified in Intervals.icu as {activity_id}.")
+                print(f"Upload receipt saved: {receipt_path}")
         return 0
     except (WorkoutError, BluetoothDeviceUnavailable, BleakError, RuntimeError, KeyboardInterrupt) as exc:
         print(f"Error: {exc}", file=sys.stderr)
